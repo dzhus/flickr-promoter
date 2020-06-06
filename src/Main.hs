@@ -124,6 +124,12 @@ postToGroup = error "postToGroup"
 fetchMyPhotos :: m [Photo]
 fetchMyPhotos = error "fetchMyPhotos"
 
+process :: IO ()
+process = do
+  photos <- fetchMyPhotos
+  forM_ photos $ \photo -> do
+    let photoGroups = mapMaybe (\(Rule (pred, g)) -> if pred photo then Just g else Nothing) rules
+    forM_ photoGroups (postToGroup photo)
 
 main :: IO ()
 main = do

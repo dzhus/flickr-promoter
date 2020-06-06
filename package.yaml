@@ -1,0 +1,20 @@
+name:                flickr-promoter
+version:             0.1.0.0
+#synopsis:
+#description:
+homepage:            https://github.com/dzhus/flickr-promoter#readme
+license:             BSD3
+author:              Dmitry Dzhus
+maintainer:          dima@dzhus.org
+copyright:           Dmitry Dzhus 2020
+category:            Web
+extra-source-files:
+- README.md
+
+dependencies:
+  - base >= 4.7 && < 5
+
+executables:
+  flickr-promoter:
+    source-dirs:      src
+    main:             Main.hs

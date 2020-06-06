@@ -17,6 +17,7 @@ dependencies:
   - classy-prelude
   - containers
   - http-client-tls
+  - http-media
   - modern-uri
   - polysemy
   - servant

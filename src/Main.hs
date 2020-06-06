@@ -22,10 +22,16 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
+
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedLabels #-}
 
 module Main where
 
@@ -40,25 +46,30 @@ import Data.String
 import GHC.Generics
 
 import Network.HTTP.Client.TLS
+import Network.HTTP.Media ((//), (/:))
 
 import Servant.API
 import Servant.Client
 
-newtype PhotoId = PhotoId Text deriving newtype ToHttpApiData
+newtype PhotoId = PhotoId Text
+  deriving newtype (IsString, Show, ToHttpApiData)
 
 newtype Tag = Tag Text
+  deriving Show
 
 newtype Location = Location Text
+  deriving Show
 
 data Photo = Photo
   { id       :: PhotoId
   , tags     :: Set Tag
   , location :: Location
   }
+  deriving Show
 
 instance FromJSON Photo where
   parseJSON = withObject "Photo" $ \o ->
-    o .: "location"
+    o .: "photo"
 
 newtype GroupId = GroupId Text deriving newtype IsString
 
@@ -74,7 +85,7 @@ any = const True
 locatedIn :: Text -> Photo -> Bool
 locatedIn text photo = text `isInfixOf` loc
   where
-    Location loc = location photo
+    Location loc = getField @"location" photo
 
 data FlickrMethod
   = GroupsGetInfo
@@ -105,10 +116,43 @@ data LoginResponse = LoginResponse
   { user :: FlickrUser }
   deriving (Generic, FromJSON, Show)
 
-type FlickrAPI = QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] LoginResponse :<|>
-                 QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] Photo
+data FlickrJSON
 
-testLogin :<|> recentlyUpdated = client (Proxy :: Proxy FlickrAPI)
+data PhotoResponse = PhotoResponse
+  { photo :: FlickrPhoto }
+  deriving (Generic, FromJSON, Show)
+
+data FlickrLocation = FlickrLocation
+  { country :: FlickrContent
+  , region :: FlickrContent
+  , county :: FlickrContent
+  , locality :: FlickrContent
+  }
+  deriving (Generic, FromJSON, Show)
+
+data FlickrPhoto = FlickrPhoto
+  { location :: FlickrLocation
+  , tags     :: FlickrTags
+  }
+  deriving (Generic, FromJSON, Show)
+
+data FlickrTags = FlickrTags
+  { tag :: [FlickrContent] }
+  deriving (Generic, FromJSON, Show)
+
+instance Accept FlickrJSON where
+  contentType _ = "text" // "javascript" /: ("charset", "utf-8")
+
+instance FromJSON a => MimeUnrender FlickrJSON a where
+  mimeUnrender _ = eitherDecode . dropPrefix "jsonFlickrApi(" . dropSuffix ")"
+
+type FlickrAPI = QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[FlickrJSON] LoginResponse :<|>
+                 QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> QueryParam "photo_id" PhotoId :> Get '[FlickrJSON] PhotoResponse
+
+testLogin :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
+
+-- TODO Wrap raw methods in something that will automatically provide
+-- api_key, method and format
 
 rules = [ any .=> "34427469792@N01"
         , locatedIn "Prague" .=> "48889111127@N01"
@@ -131,11 +175,12 @@ process = do
     let photoGroups = mapMaybe (\(Rule (pred, g)) -> if pred photo then Just g else Nothing) rules
     forM_ photoGroups (postToGroup photo)
 
+apiKey :: Maybe Text
 apiKey = Just "bad7960ebd9a9742de19b51b84f70d4a"
 
 main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
-  res <- runClientM (testLogin apiKey (Just TestLogin) (Just JsonFormat)) env
-  print res
+  (print =<<) $ runClientM (testLogin apiKey (Just TestLogin) (Just JsonFormat)) env
+  (print =<<) $ runClientM (photosGetInfo apiKey (Just PhotosGetInfo) (Just JsonFormat) (Just "48819805098")) env

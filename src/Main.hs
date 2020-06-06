@@ -39,10 +39,12 @@ import Data.Set
 import Data.String
 import GHC.Generics
 
+import Network.HTTP.Client.TLS
+
 import Servant.API
 import Servant.Client
 
-newtype PhotoId = PhotoId Text
+newtype PhotoId = PhotoId Text deriving newtype ToHttpApiData
 
 newtype Tag = Tag Text
 
@@ -74,9 +76,39 @@ locatedIn text photo = text `isInfixOf` loc
   where
     Location loc = location photo
 
-type FlickrAPI = QueryParam "method" :> QueryParam "photo_id" PhotoId :> Get '[JSON] Photo
+data FlickrMethod
+  = GroupsGetInfo
+  | PhotosGetInfo
+  | PhotosRecentlyUpdated
+  | TestLogin
 
-recentlyUpdated = client (Proxy :: Proxy FlickrAPI)
+instance ToHttpApiData FlickrMethod where
+  toQueryParam GroupsGetInfo = "groups.get.info"
+  toQueryParam PhotosGetInfo = "flickr.photos.getInfo"
+  toQueryParam PhotosRecentlyUpdated = "flickr.photos.recentlyUpdated"
+  toQueryParam TestLogin = "flickr.test.login"
+
+data FlickrFormat = JsonFormat
+
+instance ToHttpApiData FlickrFormat where
+  toQueryParam _ = "json"
+
+data FlickrContent = FlickrContent
+  { _content :: Text }
+  deriving (Generic, FromJSON, Show)
+
+data FlickrUser = FlickrUser
+  { username :: FlickrContent }
+  deriving (Generic, FromJSON, Show)
+
+data LoginResponse = LoginResponse
+  { user :: FlickrUser }
+  deriving (Generic, FromJSON, Show)
+
+type FlickrAPI = QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] LoginResponse :<|>
+                 QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] Photo
+
+testLogin :<|> recentlyUpdated = client (Proxy :: Proxy FlickrAPI)
 
 rules = [ any .=> "34427469792@N01"
         , locatedIn "Prague" .=> "48889111127@N01"
@@ -85,8 +117,17 @@ rules = [ any .=> "34427469792@N01"
         , locatedIn "Lyon" .=> "13409106@N00"
         ]
 
-flickrApi = "https://www.flickr.com/services/rest/"
+flickrApi = BaseUrl Https "www.flickr.com" 443 "/services/rest/"
+
+postToGroup = error "postToGroup"
+
+fetchMyPhotos :: m [Photo]
+fetchMyPhotos = error "fetchMyPhotos"
+
 
 main :: IO ()
 main = do
+  mgr <- newTlsManager
+  let env = mkClientEnv mgr flickrApi
+  (print =<<) $ runClientM (testLogin (Just TestLogin) (Just JsonFormat)) env
   putStrLn "hello world"

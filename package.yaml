@@ -13,6 +13,22 @@ extra-source-files:
 
 dependencies:
   - base >= 4.7 && < 5
+  - aeson
+  - classy-prelude
+  - containers
+  - http-client-tls
+  - modern-uri
+  - polysemy
+  - servant
+  - servant-client
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Werror=incomplete-patterns
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wredundant-constraints
 
 executables:
   flickr-promoter:

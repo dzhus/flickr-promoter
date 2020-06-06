@@ -94,7 +94,7 @@ data FlickrMethod
   | TestLogin
 
 instance ToHttpApiData FlickrMethod where
-  toQueryParam GroupsGetInfo = "groups.get.info"
+  toQueryParam GroupsGetInfo = "flickr.groups.getInfo"
   toQueryParam PhotosGetInfo = "flickr.photos.getInfo"
   toQueryParam PhotosRecentlyUpdated = "flickr.photos.recentlyUpdated"
   toQueryParam TestLogin = "flickr.test.login"

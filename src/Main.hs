@@ -105,8 +105,8 @@ data LoginResponse = LoginResponse
   { user :: FlickrUser }
   deriving (Generic, FromJSON, Show)
 
-type FlickrAPI = QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] LoginResponse :<|>
-                 QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] Photo
+type FlickrAPI = QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] LoginResponse :<|>
+                 QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[JSON] Photo
 
 testLogin :<|> recentlyUpdated = client (Proxy :: Proxy FlickrAPI)
 
@@ -131,9 +131,11 @@ process = do
     let photoGroups = mapMaybe (\(Rule (pred, g)) -> if pred photo then Just g else Nothing) rules
     forM_ photoGroups (postToGroup photo)
 
+apiKey = Just "bad7960ebd9a9742de19b51b84f70d4a"
+
 main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
-  (print =<<) $ runClientM (testLogin (Just TestLogin) (Just JsonFormat)) env
-  putStrLn "hello world"
+  res <- runClientM (testLogin apiKey (Just TestLogin) (Just JsonFormat)) env
+  print res

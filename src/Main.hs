@@ -175,7 +175,7 @@ process = do
     forM_ photoGroups (postToGroup photo)
 
 apiKey :: Maybe Text
-apiKey = Just "bad7960ebd9a9742de19b51b84f70d4a"
+apiKey = Just "53eeb65b3ecfc822e4cdfa8440e058fd"
 
 main :: IO ()
 main = do

@@ -102,8 +102,9 @@ data FlickrResponseFormat = JsonFormat
 instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
   type Client m (FlickrResponseFormat :> api) = Client m api
 
-  clientWithRoute pm _ req = clientWithRoute pm (Proxy :: Proxy api) $
-    appendToQueryString "format" (Just "json") req
+  clientWithRoute pm _ = clientWithRoute pm (Proxy :: Proxy api) .
+    appendToQueryString "nojsoncallback" (Just "1") .
+    appendToQueryString "format" (Just "json")
 
   hoistClientMonad pm _ f cl =
     hoistClientMonad pm (Proxy :: Proxy api) f cl
@@ -119,8 +120,6 @@ data FlickrUser = FlickrUser
 data LoginResponse = LoginResponse
   { user :: FlickrUser }
   deriving (Generic, FromJSON, Show)
-
-data FlickrJSON
 
 data PhotoResponse = PhotoResponse
   { photo :: FlickrPhoto }
@@ -144,14 +143,8 @@ data FlickrTags = FlickrTags
   { tag :: [FlickrContent] }
   deriving (Generic, FromJSON, Show)
 
-instance Accept FlickrJSON where
-  contentType _ = "text" // "javascript" /: ("charset", "utf-8")
-
-instance FromJSON a => MimeUnrender FlickrJSON a where
-  mimeUnrender _ = eitherDecode . dropPrefix "jsonFlickrApi(" . dropSuffix ")"
-
-type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> FlickrMethod "flickr.test.login" :> Get '[FlickrJSON] LoginResponse :<|>
-                                          QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[FlickrJSON] PhotoResponse)
+type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> FlickrMethod "flickr.test.login" :> Get '[JSON] LoginResponse :<|>
+                                          QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse)
 
 testLogin :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 

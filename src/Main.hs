@@ -4,9 +4,12 @@
 --
 -- https://www.flickr.com/services/api/flickr.photos.recentlyUpdated.html
 --
--- Fetch information for each photo (with caching!)
+-- Fetch information for each photo, meta and which pools is it a
+-- member of (with caching!)
 --
 -- https://www.flickr.com/services/api/explore/flickr.photos.getInfo
+--
+-- https://www.flickr.com/services/api/flickr.photos.getAllContexts.html
 --
 -- Find what to post where
 --
@@ -38,18 +41,15 @@ module Main where
 
 import ClassyPrelude hiding (any)
 
-import GHC.Records
 import Data.Aeson
 import Data.Proxy
+import GHC.Records
 import GHC.TypeLits
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
-import Network.HTTP.Media ((//), (/:))
-
 import Servant.API
 import Servant.Client
 import Servant.Client.Core
-
 import Turtle.Format
 import Web.Authenticate.OAuth
 import qualified Text.URI as URI
@@ -69,10 +69,6 @@ data Photo = Photo
   , location :: Location
   }
   deriving Show
-
-instance FromJSON Photo where
-  parseJSON = withObject "Photo" $ \o ->
-    o .: "photo"
 
 newtype GroupId = GroupId Text deriving newtype IsString
 
@@ -150,10 +146,12 @@ data FlickrTags = FlickrTags
 type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> FlickrMethod "flickr.test.login" :> Get '[JSON] LoginResponse :<|>
                                           QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse)
 
+-- TODO Select only public photos
+
 testLogin :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 
 -- TODO Wrap raw methods in something that will automatically provide
--- api_key, method and format
+-- api_key
 
 rules :: [Rule]
 rules = [ any .=> "34427469792@N01"

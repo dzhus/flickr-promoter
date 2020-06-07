@@ -17,12 +17,15 @@ dependencies:
   - authenticate-oauth
   - classy-prelude
   - containers
+  - http-client
   - http-client-tls
   - http-media
+  - modern-uri
   - polysemy
   - servant
   - servant-client
   - servant-client-core
+  - turtle
 
 ghc-options:
   - -Wall

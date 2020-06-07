@@ -42,7 +42,7 @@ import GHC.Records
 import Data.Aeson
 import Data.Proxy
 import GHC.TypeLits
-
+import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
 import Network.HTTP.Media ((//), (/:))
 
@@ -50,7 +50,9 @@ import Servant.API
 import Servant.Client
 import Servant.Client.Core
 
+import Turtle.Format
 import Web.Authenticate.OAuth
+import qualified Text.URI as URI
 
 newtype PhotoId = PhotoId Text
   deriving newtype (IsString, Show, ToHttpApiData)
@@ -176,21 +178,66 @@ process = do
     let photoGroups = mapMaybe (\(Rule (test, g)) -> if test p then Just g else Nothing) rules
     forM_ photoGroups (postToGroup photo)
 
-apiKey :: Maybe Text
-apiKey = Just "53eeb65b3ecfc822e4cdfa8440e058fd"
+-- TODO Is this superseded by
+-- &oauth_consumer_key=653e7a6ecc1d528c516cc8f92cf98611 in API
+-- requests? https://www.flickr.com/services/api/auth.oauth.html
+apiKey :: Text
+apiKey = "53eeb65b3ecfc822e4cdfa8440e058fd"
+
+apiSecret = "2f5d176193666a48"
 
 flickrOAuth :: OAuth
 flickrOAuth = newOAuth{ oauthServerName = "Flickr"
+
+                      -- URLs from https://www.flickr.com/services/api/auth.oauth.html
                       , oauthRequestUri = "https://www.flickr.com/services/oauth/request_token"
                       , oauthAuthorizeUri = "https://www.flickr.com/services/oauth/authorize"
                       , oauthAccessTokenUri = "https://www.flickr.com/services/oauth/access_token"
-                      , oauthConsumerKey =
-                      , oauthConsumerSecret =
+
+                      , oauthConsumerKey = encodeUtf8 apiKey
+                      -- Secret from https://www.flickr.com/services/apps/by/...
+                      , oauthConsumerSecret = apiSecret
+                      , oauthCallback = Just "https://gist.github.com/dzhus/0bf2a8b1990c288315411ce69bca56df"
                       }
+
+
+-- Results from authorize URL redirect
+persistedAccessToken :: Maybe Credential
+persistedAccessToken = Just Credential {unCredential = [("fullname","Dmitry Djouce"),("oauth_token","72157714614929972-9e8de28f8f2bf657"),("oauth_token_secret","4366f00aefaa68dd"),("user_nsid","46721940@N00"),("username","Dmitry Djouce")]}
+
+-- Perform OAuth 1.0a authorisation with Flickr
+auth :: Manager -> IO Credential
+auth mgr = do
+  tmpCred <- getTemporaryCredential flickrOAuth mgr
+
+  let authorizationUrl = format (s % "&perms=write") $ fromString $ authorizeUrl flickrOAuth tmpCred
+  putStrLn $
+    format ("To authorize flickr-promoter, open the following URL: " %
+             s % "\n\nWhen you complete authorisation, copy the URL from the address bar here:\n")
+    authorizationUrl
+
+  authorizedUrl <- URI.mkURI <$> getLine
+  let getVerifier :: URI.QueryParam -> Maybe ByteString
+      getVerifier (URI.QueryParam k v) =
+        if Just k == URI.mkQueryKey "oauth_verifier"
+        then Just $ encodeUtf8 $ URI.unRText v
+        else Nothing
+      getVerifier _                                   = Nothing
+  case mapMaybe getVerifier =<< (URI.uriQuery <$> authorizedUrl) of
+    (verifierParam:_) -> getAccessToken flickrOAuth (injectVerifier verifierParam tmpCred) mgr
+    []                -> error "No oauth_verifier parameter found in the URL copied. Make sure you copy it correctly."
 
 main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
-  (print =<<) $ runClientM (testLogin apiKey) env
-  (print =<<) $ runClientM (photosGetInfo apiKey (Just "48819805098")) env
+
+  accessToken <- case persistedAccessToken of
+    Nothing -> auth mgr
+    Just t -> return t
+
+  putStrLn $ format ("Using access token " % s) $ tshow accessToken
+
+  (print =<<) $ runClientM (testLogin (Just apiKey)) env
+
+  (print =<<) $ runClientM (photosGetInfo (Just apiKey) (Just "28168961808")) env

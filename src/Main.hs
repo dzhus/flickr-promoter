@@ -37,14 +37,10 @@
 module Main where
 
 import ClassyPrelude hiding (any)
-import qualified ClassyPrelude as P
 
 import GHC.Records
 import Data.Aeson
 import Data.Proxy
-import Data.Set
-import Data.String
-import GHC.Generics
 
 import Network.HTTP.Client.TLS
 import Network.HTTP.Media ((//), (/:))
@@ -59,7 +55,7 @@ newtype PhotoId = PhotoId Text
 newtype Tag = Tag Text
   deriving Show
 
-newtype Location = Location Text
+newtype Location = Location { unLocation :: Text }
   deriving Show
 
 data Photo = Photo
@@ -80,14 +76,13 @@ newtype Rule = Rule (Photo -> Bool, GroupId)
 (.=>) :: (Photo -> Bool) -> GroupId -> Rule
 (.=>) isSource target = Rule (isSource, target)
 
+any :: Photo -> Bool
 any = const True
 
 -- | >>> locatedIn "UK"
 -- False
 locatedIn :: Text -> Photo -> Bool
-locatedIn text photo = text `isInfixOf` loc
-  where
-    Location loc = getField @"location" photo
+locatedIn text = isInfixOf text . unLocation . getField @"location"
 
 data FlickrMethod
   = GroupsGetInfo
@@ -162,6 +157,7 @@ testLogin :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key, method and format
 
+rules :: [Rule]
 rules = [ any .=> "34427469792@N01"
         , locatedIn "Prague" .=> "48889111127@N01"
         , locatedIn "Bavaria" .=> "860590@N23"
@@ -169,6 +165,7 @@ rules = [ any .=> "34427469792@N01"
         , locatedIn "Lyon" .=> "13409106@N00"
         ]
 
+flickrApi :: BaseUrl
 flickrApi = BaseUrl Https "www.flickr.com" 443 "/services/rest/"
 
 postToGroup = error "postToGroup"
@@ -179,8 +176,8 @@ fetchMyPhotos = error "fetchMyPhotos"
 process :: IO ()
 process = do
   photos <- fetchMyPhotos
-  forM_ photos $ \photo -> do
-    let photoGroups = mapMaybe (\(Rule (pred, g)) -> if pred photo then Just g else Nothing) rules
+  forM_ photos $ \p -> do
+    let photoGroups = mapMaybe (\(Rule (test, g)) -> if test p then Just g else Nothing) rules
     forM_ photoGroups (postToGroup photo)
 
 apiKey :: Maybe Text

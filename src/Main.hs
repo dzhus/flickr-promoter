@@ -28,10 +28,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
-
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Main where
 
@@ -50,6 +51,7 @@ import Network.HTTP.Media ((//), (/:))
 
 import Servant.API
 import Servant.Client
+import Servant.Client.Core
 
 newtype PhotoId = PhotoId Text
   deriving newtype (IsString, Show, ToHttpApiData)
@@ -99,10 +101,16 @@ instance ToHttpApiData FlickrMethod where
   toQueryParam PhotosRecentlyUpdated = "flickr.photos.recentlyUpdated"
   toQueryParam TestLogin = "flickr.test.login"
 
-data FlickrFormat = JsonFormat
+data FlickrResponseFormat = JsonFormat
 
-instance ToHttpApiData FlickrFormat where
-  toQueryParam _ = "json"
+instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
+  type Client m (FlickrResponseFormat :> api) = Client m api
+
+  clientWithRoute pm _ req = clientWithRoute pm (Proxy :: Proxy api) $
+    appendToQueryString "format" (Just "json") req
+
+  hoistClientMonad pm _ f cl =
+    hoistClientMonad pm (Proxy :: Proxy api) f cl
 
 data FlickrContent = FlickrContent
   { _content :: Text }
@@ -146,8 +154,8 @@ instance Accept FlickrJSON where
 instance FromJSON a => MimeUnrender FlickrJSON a where
   mimeUnrender _ = eitherDecode . dropPrefix "jsonFlickrApi(" . dropSuffix ")"
 
-type FlickrAPI = QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> Get '[FlickrJSON] LoginResponse :<|>
-                 QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "format" FlickrFormat :> QueryParam "photo_id" PhotoId :> Get '[FlickrJSON] PhotoResponse
+type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> Get '[FlickrJSON] LoginResponse :<|>
+                                          QueryParam "api_key" Text :> QueryParam "method" FlickrMethod :> QueryParam "photo_id" PhotoId :> Get '[FlickrJSON] PhotoResponse)
 
 testLogin :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 
@@ -182,5 +190,5 @@ main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
-  (print =<<) $ runClientM (testLogin apiKey (Just TestLogin) (Just JsonFormat)) env
-  (print =<<) $ runClientM (photosGetInfo apiKey (Just PhotosGetInfo) (Just JsonFormat) (Just "48819805098")) env
+  (print =<<) $ runClientM (testLogin apiKey (Just TestLogin)) env
+  (print =<<) $ runClientM (photosGetInfo apiKey (Just PhotosGetInfo) (Just "48819805098")) env

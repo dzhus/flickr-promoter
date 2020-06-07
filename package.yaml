@@ -22,6 +22,7 @@ dependencies:
   - polysemy
   - servant
   - servant-client
+  - servant-client-core
 
 ghc-options:
   - -Wall

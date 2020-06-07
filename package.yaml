@@ -14,11 +14,11 @@ extra-source-files:
 dependencies:
   - base >= 4.7 && < 5
   - aeson
+  - authenticate-oauth
   - classy-prelude
   - containers
   - http-client-tls
   - http-media
-  - modern-uri
   - polysemy
   - servant
   - servant-client

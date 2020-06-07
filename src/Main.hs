@@ -50,6 +50,8 @@ import Servant.API
 import Servant.Client
 import Servant.Client.Core
 
+import Web.Authenticate.OAuth
+
 newtype PhotoId = PhotoId Text
   deriving newtype (IsString, Show, ToHttpApiData)
 
@@ -176,6 +178,15 @@ process = do
 
 apiKey :: Maybe Text
 apiKey = Just "53eeb65b3ecfc822e4cdfa8440e058fd"
+
+flickrOAuth :: OAuth
+flickrOAuth = newOAuth{ oauthServerName = "Flickr"
+                      , oauthRequestUri = "https://www.flickr.com/services/oauth/request_token"
+                      , oauthAuthorizeUri = "https://www.flickr.com/services/oauth/authorize"
+                      , oauthAccessTokenUri = "https://www.flickr.com/services/oauth/access_token"
+                      , oauthConsumerKey =
+                      , oauthConsumerSecret =
+                      }
 
 main :: IO ()
 main = do

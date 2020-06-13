@@ -34,7 +34,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Main where

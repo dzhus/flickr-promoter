@@ -50,7 +50,7 @@ import Network.HTTP.Client.TLS
 import Servant.API
 import Servant.Client
 import Servant.Client.Core
-import Turtle.Format
+import Turtle.Format (format, (%), s)
 import Web.Authenticate.OAuth
 import qualified Text.URI as URI
 

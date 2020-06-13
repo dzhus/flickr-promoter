@@ -27,6 +27,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -35,6 +36,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE QuasiQuotes   #-}
 
 module Main where
 
@@ -44,14 +46,17 @@ import Data.Aeson
 import Data.Proxy
 import GHC.Records
 import GHC.TypeLits
+import Lens.Micro
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
-import Servant.API
+import Servant.API hiding (uriQuery)
 import Servant.Client
 import Servant.Client.Core
+import Text.URI (mkURI)
+import Text.URI.QQ
+import Text.URI.Lens
 import Turtle.Format (format, (%), s)
 import Web.Authenticate.OAuth
-import qualified Text.URI as URI
 
 newtype PhotoId = PhotoId Text
   deriving newtype (IsString, Show, ToHttpApiData)
@@ -213,16 +218,14 @@ auth mgr = do
              s % "\n\nWhen you complete authorisation, copy the URL from the address bar here:\n")
     authorizationUrl
 
-  authorizedUrl <- URI.mkURI <$> getLine
-  let getVerifier :: URI.QueryParam -> Maybe ByteString
-      getVerifier (URI.QueryParam k v) =
-        if Just k == URI.mkQueryKey "oauth_verifier"
-        then Just $ encodeUtf8 $ URI.unRText v
-        else Nothing
-      getVerifier _                                   = Nothing
-  case mapMaybe getVerifier =<< (URI.uriQuery <$> authorizedUrl) of
-    (verifierParam:_) -> getAccessToken flickrOAuth (injectVerifier verifierParam tmpCred) mgr
-    []                -> error "No oauth_verifier parameter found in the URL copied. Make sure you copy it correctly."
+  mkURI <$> getLine >>= \case
+    Just authorizedUrl ->
+      case authorizedUrl ^. uriQuery ^? queryParam [queryKey|oauth_verifier|] of
+        Just verifierParam -> getAccessToken flickrOAuth (injectVerifier (encodeUtf8 $ verifierParam ^. unRText) tmpCred) mgr
+        Nothing -> error "No oauth_verifier parameter found in the URL copied. Make sure you copy it correctly."
+    Nothing -> error "Could not parse the URL copied. Make sure you copy it correctly."
+
+type instance AuthClientData (AuthProtect "oauth") = Credential
 
 main :: IO ()
 main = do

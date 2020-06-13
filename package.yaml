@@ -20,6 +20,7 @@ dependencies:
   - http-client
   - http-client-tls
   - http-media
+  - microlens
   - modern-uri
   - polysemy
   - servant

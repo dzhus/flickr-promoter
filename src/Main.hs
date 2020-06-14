@@ -35,8 +35,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE QuasiQuotes   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Main where
 
@@ -44,8 +44,6 @@ import ClassyPrelude hiding (any)
 
 import Data.Aeson
 import Data.Binary.Builder
-import qualified Data.ByteString.Base64 as B64
-import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
 import Data.Proxy
 import Data.Time.Clock
@@ -61,10 +59,13 @@ import Servant.Client
 import Servant.Client.Core
 import System.Random
 import Text.URI (mkURI)
-import Text.URI.QQ
 import Text.URI.Lens
+import Text.URI.QQ
 import Turtle.Format (format, (%), s)
 import Web.Authenticate.OAuth
+
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as BS
 
 newtype PhotoId = PhotoId Text
   deriving newtype (IsString, Show, ToHttpApiData)

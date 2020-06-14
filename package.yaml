@@ -15,17 +15,24 @@ dependencies:
   - base >= 4.7 && < 5
   - aeson
   - authenticate-oauth
+  - base64-bytestring
+  - binary
+  - bytestring
   - classy-prelude
   - containers
   - http-client
   - http-client-tls
   - http-media
+  - http-types
   - microlens
   - modern-uri
   - polysemy
+  - random
   - servant
   - servant-client
   - servant-client-core
+  - SHA
+  - time
   - turtle
 
 ghc-options:

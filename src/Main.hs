@@ -43,15 +43,23 @@ module Main where
 import ClassyPrelude hiding (any)
 
 import Data.Aeson
+import Data.Binary.Builder
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as BS
+import Data.Digest.Pure.SHA
 import Data.Proxy
+import Data.Time.Clock
+import Data.Time.Clock.POSIX
 import GHC.Records
 import GHC.TypeLits
 import Lens.Micro
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
+import Network.HTTP.Types.URI
 import Servant.API hiding (uriQuery)
 import Servant.Client
 import Servant.Client.Core
+import System.Random
 import Text.URI (mkURI)
 import Text.URI.QQ
 import Text.URI.Lens
@@ -147,7 +155,7 @@ data FlickrTags = FlickrTags
   { tag :: [FlickrContent] }
   deriving (Generic, FromJSON, Show)
 
-type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> FlickrMethod "flickr.test.login" :> Get '[JSON] LoginResponse :<|>
+type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> FlickrMethod "flickr.test.login" :>  AuthProtect "oauth" :> Get '[JSON] LoginResponse :<|>
                                           QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse)
 
 -- TODO Select only public photos
@@ -225,7 +233,63 @@ auth mgr = do
         Nothing -> error "No oauth_verifier parameter found in the URL copied. Make sure you copy it correctly."
     Nothing -> error "Could not parse the URL copied. Make sure you copy it correctly."
 
-type instance AuthClientData (AuthProtect "oauth") = Credential
+-- | Generate OAuth 1.0a signature base string as per
+-- https://oauth.net/core/1.0a/#anchor13.
+oauthBaseString
+  :: ClientEnv
+  -> Request
+  -> LByteString
+oauthBaseString env req = fromStrict $ intercalate "&"
+  [ requestMethod req
+  , ((baseUrl env & showBaseUrl & BS.pack) <>
+     (requestPath req & toLazyByteString & toStrict)) & urlEncode True
+  , requestQueryString req & toList & sort & renderQuery False & urlEncode True
+  ]
+
+generateSignature
+  :: OAuth
+  -> Credential
+  -> ClientEnv
+  -> Request
+  -> ByteString
+generateSignature oa cred env req =
+  case (oauthSignatureMethod oa, lookup "oauth_token_secret" $ unCredential cred) of
+    (HMACSHA1, Just tokenSecret) ->
+      B64.encode $ toStrict $ bytestringDigest $ hmacSha1 (fromStrict key) (oauthBaseString env req)
+      where
+        key = BS.intercalate "&" $ map paramEncode [oauthConsumerSecret oa, tokenSecret]
+    (_, Nothing) -> error "Can't sign a request without oauth_token_secret in credential"
+    _ -> error "Unsupported signature method"
+
+signRequest
+  :: OAuth
+  -> Credential
+  -> ClientEnv
+  -> Text
+  -- ^ @oauth_nonce@
+  -> POSIXTime
+  -- ^ @oauth_timestamp@
+  -> Request
+  -> Request
+signRequest oa cred env nonce ts req =
+  case lookup "oauth_token" $ unCredential cred of
+    Just oauth_token ->
+      req' & add "oauth_signature" (decodeUtf8 $ generateSignature oa cred env req')
+      where
+        -- https://oauth.net/core/1.0a/#anchor12
+        add f v = appendToQueryString f (Just v)
+        req' = req &
+          add "oauth_consumer_key" (decodeUtf8 $ oauthConsumerKey oa) &
+          add "oauth_nonce" nonce &
+          add "oauth_signature_method" "HMAC-SHA1" &
+          add "oauth_timestamp" (tshow (round (nominalDiffTimeToSeconds ts) :: Integer)) &
+          add "oauth_token" (decodeUtf8 oauth_token) &
+          add "oauth_version" "1.0"
+    Nothing -> error "Can't sign a request without oauth_token in credential"
+
+-- TODO Figure out what is AuthClientData if it varies with each
+-- request and needs IO
+type instance AuthClientData (AuthProtect "oauth") = ()
 
 main :: IO ()
 main = do
@@ -237,7 +301,22 @@ main = do
     Just t -> return t
 
   putStrLn $ format ("Using access token " % s) $ tshow accessToken
+  print flickrOAuth
 
-  (print =<<) $ runClientM (testLogin (Just apiKey)) env
+  nonce <- replicateM 10 $ randomRIO ('a', 'z')
+  ts <- getPOSIXTime
+
+  -- The problem here is that authenticate-oauth uses Request type
+  -- from http-client whereas servant authentication hooks expose
+  -- servant-client's Request which is different from http-client.
+  --
+  -- A rewrite involves a new "base string" computation mechanism
+  -- which is also more involved with servant-client, as requests do
+  -- not have the full URL in them (hostname is provided separately as
+  -- they are not considered part of the API).
+  let sign = signRequest flickrOAuth accessToken env nonce ts
+      authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
+
+  (print =<<) $ runClientM (testLogin (Just apiKey) authenticator) env
 
   (print =<<) $ runClientM (photosGetInfo (Just apiKey) (Just "28168961808")) env

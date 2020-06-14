@@ -295,10 +295,10 @@ signRequest oa cred env nonce ts req =
 type instance AuthClientData (AuthProtect "oauth") = ()
 
 -- | servant-client interface for OAuth 1.0a
-runOAuthenticated :: (AuthClientData aType ~ ())
-  => OAuth
+runOAuthenticated
+  :: OAuth
   -> Credential
-  -> (AuthenticatedRequest aType -> ClientM r)
+  -> (AuthenticatedRequest (AuthProtect "oauth") -> ClientM r)
   -> ClientEnv
   -> IO (Either ClientError r)
 runOAuthenticated oa cred act env = do

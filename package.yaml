@@ -32,6 +32,7 @@ dependencies:
   - servant-client
   - servant-client-core
   - SHA
+  - text
   - time
   - turtle
 

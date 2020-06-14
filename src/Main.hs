@@ -42,10 +42,12 @@ module Main where
 
 import ClassyPrelude hiding (any)
 
+import Control.Monad.Fail
 import Data.Aeson
 import Data.Binary.Builder
 import Data.Digest.Pure.SHA
 import Data.Proxy
+import Data.Text.Read
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import GHC.Records
@@ -68,7 +70,7 @@ import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BS
 
 newtype PhotoId = PhotoId Text
-  deriving newtype (IsString, Show, ToHttpApiData)
+  deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
 
 newtype Tag = Tag Text
   deriving Show
@@ -141,7 +143,7 @@ data PhotoResponse = PhotoResponse
 data FlickrLocation = FlickrLocation
   { country :: FlickrContent
   , region :: FlickrContent
-  , county :: FlickrContent
+  , county :: Maybe FlickrContent
   , locality :: FlickrContent
   }
   deriving (Generic, FromJSON, Show)
@@ -156,12 +158,66 @@ data FlickrTags = FlickrTags
   { tag :: [FlickrContent] }
   deriving (Generic, FromJSON, Show)
 
-type FlickrAPI = FlickrResponseFormat :> (QueryParam "api_key" Text :> FlickrMethod "flickr.test.login" :>  AuthProtect "oauth" :> Get '[JSON] LoginResponse :<|>
+data RecentlyUpdatedResponse = RecentlyUpdatedResponse
+  { photos :: FlickrPhotos
+  }
+  deriving (Generic, FromJSON, Show)
+
+data FlickrPhotoDigest = FlickrPhotoDigest
+  { id :: PhotoId
+  , ispublic :: BoolFromBit
+  , views :: Maybe WordFromString
+  -- We're not requesting tags or geo here as it's not formatted in a
+  -- structured way in recentlyUpdated response.
+  }
+  deriving (Generic, FromJSON, Show)
+
+newtype BoolFromBit = BoolFromBit Bool
+  deriving Show
+
+instance FromJSON BoolFromBit where
+  parseJSON (Number 1) = pure $ BoolFromBit True
+  parseJSON (Number _) = pure $ BoolFromBit False
+  parseJSON _          = fail "Could not parse BoolFromBit"
+
+newtype WordFromString = WordFromString Word
+  deriving Show
+
+instance FromJSON WordFromString where
+  parseJSON = withText "WordFromString" $ \text ->
+    case decimal text of
+      Right (parsed, "") -> pure $ WordFromString parsed
+      _ -> fail "Could not parse WordFromString"
+
+data FlickrPhotos = FlickrPhotos
+  { photo :: [FlickrPhotoDigest]
+  , page :: Word
+  , pages :: Word
+  , perpage :: Word
+  , total :: WordFromString
+  }
+  deriving (Generic, FromJSON, Show)
+
+newtype CommaSeparatedList a = CSL [a]
+  deriving (Show, Generic, Foldable, Functor)
+
+instance ToHttpApiData a => ToHttpApiData (CommaSeparatedList a) where
+  toQueryParam (CSL params) = intercalate "," $ map toQueryParam params
+
+-- TODO Combine supplying api_key with oauth helper?
+--
+-- It seems that api_key for OAuth-authenticated requests is not
+-- actually required despite the API documentation saying so.
+
+-- TODO Client functions must have tagged arguments automatically
+
+type FlickrAPI = FlickrResponseFormat :> (FlickrMethod "flickr.test.login" :>  AuthProtect "oauth" :> Get '[JSON] LoginResponse :<|>
+                                          FlickrMethod "flickr.photos.recentlyUpdated" :> QueryParam "min_date" POSIXTime :> QueryParam "page" Word :> QueryParam "per_page" Word :> QueryParam "extras" (CommaSeparatedList Text) :> AuthProtect "oauth" :> Get '[JSON] RecentlyUpdatedResponse :<|>
                                           QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse)
 
 -- TODO Select only public photos
 
-testLogin :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
+testLogin :<|> photosRecentlyUpdated :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key
@@ -187,7 +243,7 @@ process = do
   photos <- fetchMyPhotos
   forM_ photos $ \p -> do
     let photoGroups = mapMaybe (\(Rule (test, g)) -> if test p then Just g else Nothing) rules
-    forM_ photoGroups (postToGroup photo)
+    forM_ photoGroups (postToGroup p)
 
 -- TODO Is this superseded by
 -- &oauth_consumer_key=653e7a6ecc1d528c516cc8f92cf98611 in API
@@ -312,15 +368,15 @@ main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
+      minTs = 0
 
   accessToken <- case persistedAccessToken of
     Nothing -> auth mgr
     Just t -> return t
 
-  putStrLn $ format ("Using access token " % s) $ tshow accessToken
-  print flickrOAuth
+  (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
+  Right ruResp <- runOAuthenticated flickrOAuth accessToken (photosRecentlyUpdated (Just minTs) (Just 0) (Just 10) (Just $ CSL ["views"])) env
 
+  let photoId = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
 
-  (print =<<) $ runOAuthenticated flickrOAuth accessToken (testLogin (Just apiKey)) env
-
-  (print =<<) $ runClientM (photosGetInfo (Just apiKey) (Just "28168961808")) env
+  (print =<<) $ runClientM (photosGetInfo (Just apiKey) photoId) env

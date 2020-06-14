@@ -72,6 +72,9 @@ import qualified Data.ByteString.Char8 as BS
 newtype PhotoId = PhotoId Text
   deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
 
+newtype GroupId = GroupId Text
+  deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
+
 newtype Tag = Tag Text
   deriving Show
 
@@ -84,8 +87,6 @@ data Photo = Photo
   , location :: Location
   }
   deriving Show
-
-newtype GroupId = GroupId Text deriving newtype IsString
 
 newtype Rule = Rule (Photo -> Bool, GroupId)
 
@@ -204,20 +205,32 @@ newtype CommaSeparatedList a = CSL [a]
 instance ToHttpApiData a => ToHttpApiData (CommaSeparatedList a) where
   toQueryParam (CSL params) = intercalate "," $ map toQueryParam params
 
--- TODO Combine supplying api_key with oauth helper?
---
--- It seems that api_key for OAuth-authenticated requests is not
--- actually required despite the API documentation saying so.
+data FlickrPool = FlickrPool
+  { id :: GroupId
+  }
+  deriving (Generic, FromJSON, Show)
+
+data GetAllContextsResponse = GetAllContextsResponse
+  { pool :: Maybe [FlickrPool]
+  }
+  deriving (Generic, FromJSON, Show)
+
 
 -- TODO Client functions must have tagged arguments automatically
-
+--
+-- TODO Combine supplying api_key with oauth helper?
+--
+-- Unauthenticated requests require api_key parameter, however it's
+-- not actually required for those signed with OAuth 1.0a despite the
+-- API documentation saying so.
 type FlickrAPI = FlickrResponseFormat :> (FlickrMethod "flickr.test.login" :>  AuthProtect "oauth" :> Get '[JSON] LoginResponse :<|>
                                           FlickrMethod "flickr.photos.recentlyUpdated" :> QueryParam "min_date" POSIXTime :> QueryParam "page" Word :> QueryParam "per_page" Word :> QueryParam "extras" (CommaSeparatedList Text) :> AuthProtect "oauth" :> Get '[JSON] RecentlyUpdatedResponse :<|>
+                                          QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse :<|>
                                           QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse)
 
 -- TODO Select only public photos
 
-testLogin :<|> photosRecentlyUpdated :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
+testLogin :<|> photosRecentlyUpdated :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key
@@ -380,3 +393,4 @@ main = do
   let photoId = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
 
   (print =<<) $ runClientM (photosGetInfo (Just apiKey) photoId) env
+  (print =<<) $ runClientM (photosGetAllContexts (Just apiKey) photoId) env

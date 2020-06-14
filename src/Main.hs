@@ -216,7 +216,7 @@ flickrOAuth = newOAuth{ oauthServerName = "Flickr"
 persistedAccessToken :: Maybe Credential
 persistedAccessToken = Just Credential {unCredential = [("fullname","Dmitry Djouce"),("oauth_token","72157714614929972-9e8de28f8f2bf657"),("oauth_token_secret","4366f00aefaa68dd"),("user_nsid","46721940@N00"),("username","Dmitry Djouce")]}
 
--- Perform OAuth 1.0a authorisation with Flickr
+-- | Request OAuth 1.0a authorisation with Flickr.
 auth :: Manager -> IO Credential
 auth mgr = do
   tmpCred <- getTemporaryCredential flickrOAuth mgr
@@ -235,7 +235,7 @@ auth mgr = do
     Nothing -> error "Could not parse the URL copied. Make sure you copy it correctly."
 
 -- | Generate OAuth 1.0a signature base string as per
--- https://oauth.net/core/1.0a/#anchor13.
+-- <https://oauth.net/core/1.0a/#anchor13>.
 oauthBaseString
   :: ClientEnv
   -> Request
@@ -247,6 +247,8 @@ oauthBaseString env req = fromStrict $ intercalate "&"
   , requestQueryString req & toList & sort & renderQuery False & urlEncode True
   ]
 
+-- | Sign a request as per <https://oauth.net/core/1.0a/#anchor15>. We
+-- only support HMAC-SHA1 signatures
 generateSignature
   :: OAuth
   -> Credential
@@ -292,6 +294,20 @@ signRequest oa cred env nonce ts req =
 -- request and needs IO
 type instance AuthClientData (AuthProtect "oauth") = ()
 
+-- | servant-client interface for OAuth 1.0a
+runOAuthenticated :: (AuthClientData aType ~ ())
+  => OAuth
+  -> Credential
+  -> (AuthenticatedRequest aType -> ClientM r)
+  -> ClientEnv
+  -> IO (Either ClientError r)
+runOAuthenticated oa cred act env = do
+  nonce <- replicateM 10 $ randomRIO ('a', 'z')
+  ts <- getPOSIXTime
+  let sign = signRequest oa cred env nonce ts
+      authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
+  runClientM (act authenticator) env
+
 main :: IO ()
 main = do
   mgr <- newTlsManager
@@ -304,20 +320,7 @@ main = do
   putStrLn $ format ("Using access token " % s) $ tshow accessToken
   print flickrOAuth
 
-  nonce <- replicateM 10 $ randomRIO ('a', 'z')
-  ts <- getPOSIXTime
 
-  -- The problem here is that authenticate-oauth uses Request type
-  -- from http-client whereas servant authentication hooks expose
-  -- servant-client's Request which is different from http-client.
-  --
-  -- A rewrite involves a new "base string" computation mechanism
-  -- which is also more involved with servant-client, as requests do
-  -- not have the full URL in them (hostname is provided separately as
-  -- they are not considered part of the API).
-  let sign = signRequest flickrOAuth accessToken env nonce ts
-      authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
-
-  (print =<<) $ runClientM (testLogin (Just apiKey) authenticator) env
+  (print =<<) $ runOAuthenticated flickrOAuth accessToken (testLogin (Just apiKey)) env
 
   (print =<<) $ runClientM (photosGetInfo (Just apiKey) (Just "28168961808")) env

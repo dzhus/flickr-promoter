@@ -1,3 +1,20 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 -- | So the plan is:
 --
 -- Fetch list of photos:
@@ -20,31 +37,14 @@
 -- Post until there're no groups to add photos to
 --
 -- https://www.flickr.com/services/api/flickr.groups.pools.add.html
-
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE QuasiQuotes #-}
-
 module Main where
 
 import ClassyPrelude hiding (any)
-
 import Control.Monad.Fail
 import Data.Aeson
 import Data.Binary.Builder
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
 import Data.Proxy
 import Data.Text.Read
@@ -63,11 +63,8 @@ import System.Random
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
-import Turtle.Format (format, (%), s)
+import Turtle.Format ((%), format, s)
 import Web.Authenticate.OAuth
-
-import qualified Data.ByteString.Base64 as B64
-import qualified Data.ByteString.Char8 as BS
 
 newtype PhotoId = PhotoId Text
   deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
@@ -76,17 +73,17 @@ newtype GroupId = GroupId Text
   deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
 
 newtype Tag = Tag Text
-  deriving Show
+  deriving (Show)
 
-newtype Location = Location { unLocation :: Text }
-  deriving Show
+newtype Location = Location {unLocation :: Text}
+  deriving (Show)
 
 data Photo = Photo
-  { id       :: PhotoId
-  , tags     :: Set Tag
-  , location :: Location
+  { id :: PhotoId,
+    tags :: Set Tag,
+    location :: Location
   }
-  deriving Show
+  deriving (Show)
 
 newtype Rule = Rule (Photo -> Bool, GroupId)
 
@@ -118,45 +115,46 @@ data FlickrResponseFormat = JsonFormat
 instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
   type Client m (FlickrResponseFormat :> api) = Client m api
 
-  clientWithRoute pm _ = clientWithRoute pm (Proxy :: Proxy api) .
-    appendToQueryString "nojsoncallback" (Just "1") .
-    appendToQueryString "format" (Just "json")
+  clientWithRoute pm _ =
+    clientWithRoute pm (Proxy :: Proxy api)
+      . appendToQueryString "nojsoncallback" (Just "1")
+      . appendToQueryString "format" (Just "json")
 
   hoistClientMonad pm _ f cl =
     hoistClientMonad pm (Proxy :: Proxy api) f cl
 
 data FlickrContent = FlickrContent
-  { _content :: Text }
+  {_content :: Text}
   deriving (Generic, FromJSON, Show)
 
 data FlickrUser = FlickrUser
-  { username :: FlickrContent }
+  {username :: FlickrContent}
   deriving (Generic, FromJSON, Show)
 
 data LoginResponse = LoginResponse
-  { user :: FlickrUser }
+  {user :: FlickrUser}
   deriving (Generic, FromJSON, Show)
 
 data PhotoResponse = PhotoResponse
-  { photo :: FlickrPhoto }
+  {photo :: FlickrPhoto}
   deriving (Generic, FromJSON, Show)
 
 data FlickrLocation = FlickrLocation
-  { country :: FlickrContent
-  , region :: FlickrContent
-  , county :: Maybe FlickrContent
-  , locality :: FlickrContent
+  { country :: FlickrContent,
+    region :: FlickrContent,
+    county :: Maybe FlickrContent,
+    locality :: FlickrContent
   }
   deriving (Generic, FromJSON, Show)
 
 data FlickrPhoto = FlickrPhoto
-  { location :: FlickrLocation
-  , tags     :: FlickrTags
+  { location :: FlickrLocation,
+    tags :: FlickrTags
   }
   deriving (Generic, FromJSON, Show)
 
 data FlickrTags = FlickrTags
-  { tag :: [FlickrContent] }
+  {tag :: [FlickrContent]}
   deriving (Generic, FromJSON, Show)
 
 data RecentlyUpdatedResponse = RecentlyUpdatedResponse
@@ -165,24 +163,24 @@ data RecentlyUpdatedResponse = RecentlyUpdatedResponse
   deriving (Generic, FromJSON, Show)
 
 data FlickrPhotoDigest = FlickrPhotoDigest
-  { id :: PhotoId
-  , ispublic :: BoolFromBit
-  , views :: Maybe WordFromString
-  -- We're not requesting tags or geo here as it's not formatted in a
-  -- structured way in recentlyUpdated response.
+  { id :: PhotoId,
+    ispublic :: BoolFromBit,
+    views :: Maybe WordFromString
+    -- We're not requesting tags or geo here as it's not formatted in a
+    -- structured way in recentlyUpdated response.
   }
   deriving (Generic, FromJSON, Show)
 
 newtype BoolFromBit = BoolFromBit Bool
-  deriving Show
+  deriving (Show)
 
 instance FromJSON BoolFromBit where
   parseJSON (Number 1) = pure $ BoolFromBit True
   parseJSON (Number _) = pure $ BoolFromBit False
-  parseJSON _          = fail "Could not parse BoolFromBit"
+  parseJSON _ = fail "Could not parse BoolFromBit"
 
 newtype WordFromString = WordFromString Word
-  deriving Show
+  deriving (Show)
 
 instance FromJSON WordFromString where
   parseJSON = withText "WordFromString" $ \text ->
@@ -191,11 +189,11 @@ instance FromJSON WordFromString where
       _ -> fail "Could not parse WordFromString"
 
 data FlickrPhotos = FlickrPhotos
-  { photo :: [FlickrPhotoDigest]
-  , page :: Word
-  , pages :: Word
-  , perpage :: Word
-  , total :: WordFromString
+  { photo :: [FlickrPhotoDigest],
+    page :: Word,
+    pages :: Word,
+    perpage :: Word,
+    total :: WordFromString
   }
   deriving (Generic, FromJSON, Show)
 
@@ -215,7 +213,6 @@ data GetAllContextsResponse = GetAllContextsResponse
   }
   deriving (Generic, FromJSON, Show)
 
-
 -- TODO Client functions must have tagged arguments automatically
 --
 -- TODO Combine supplying api_key with oauth helper?
@@ -223,10 +220,13 @@ data GetAllContextsResponse = GetAllContextsResponse
 -- Unauthenticated requests require api_key parameter, however it's
 -- not actually required for those signed with OAuth 1.0a despite the
 -- API documentation saying so.
-type FlickrAPI = FlickrResponseFormat :> (FlickrMethod "flickr.test.login" :>  AuthProtect "oauth" :> Get '[JSON] LoginResponse :<|>
-                                          FlickrMethod "flickr.photos.recentlyUpdated" :> QueryParam "min_date" POSIXTime :> QueryParam "page" Word :> QueryParam "per_page" Word :> QueryParam "extras" (CommaSeparatedList Text) :> AuthProtect "oauth" :> Get '[JSON] RecentlyUpdatedResponse :<|>
-                                          QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse :<|>
-                                          QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse)
+type FlickrAPI =
+  FlickrResponseFormat
+    :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
+           :<|> FlickrMethod "flickr.photos.recentlyUpdated" :> QueryParam "min_date" POSIXTime :> QueryParam "page" Word :> QueryParam "per_page" Word :> QueryParam "extras" (CommaSeparatedList Text) :> AuthProtect "oauth" :> Get '[JSON] RecentlyUpdatedResponse
+           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
+           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
+       )
 
 -- TODO Select only public photos
 
@@ -236,12 +236,13 @@ testLogin :<|> photosRecentlyUpdated :<|> photosGetAllContexts :<|> photosGetInf
 -- api_key
 
 rules :: [Rule]
-rules = [ any .=> "34427469792@N01"
-        , locatedIn "Prague" .=> "48889111127@N01"
-        , locatedIn "Bavaria" .=> "860590@N23"
-        , locatedIn "Crimea" .=> "60453939@N00"
-        , locatedIn "Lyon" .=> "13409106@N00"
-        ]
+rules =
+  [ any .=> "34427469792@N01",
+    locatedIn "Prague" .=> "48889111127@N01",
+    locatedIn "Bavaria" .=> "860590@N23",
+    locatedIn "Crimea" .=> "60453939@N00",
+    locatedIn "Lyon" .=> "13409106@N00"
+  ]
 
 flickrApi :: BaseUrl
 flickrApi = BaseUrl Https "www.flickr.com" 443 "/services/rest/"
@@ -267,23 +268,22 @@ apiKey = "53eeb65b3ecfc822e4cdfa8440e058fd"
 apiSecret = "2f5d176193666a48"
 
 flickrOAuth :: OAuth
-flickrOAuth = newOAuth{ oauthServerName = "Flickr"
-
-                      -- URLs from https://www.flickr.com/services/api/auth.oauth.html
-                      , oauthRequestUri = "https://www.flickr.com/services/oauth/request_token"
-                      , oauthAuthorizeUri = "https://www.flickr.com/services/oauth/authorize"
-                      , oauthAccessTokenUri = "https://www.flickr.com/services/oauth/access_token"
-
-                      , oauthConsumerKey = encodeUtf8 apiKey
-                      -- Secret from https://www.flickr.com/services/apps/by/...
-                      , oauthConsumerSecret = apiSecret
-                      , oauthCallback = Just "https://gist.github.com/dzhus/0bf2a8b1990c288315411ce69bca56df"
-                      }
-
+flickrOAuth =
+  newOAuth
+    { oauthServerName = "Flickr",
+      -- URLs from https://www.flickr.com/services/api/auth.oauth.html
+      oauthRequestUri = "https://www.flickr.com/services/oauth/request_token",
+      oauthAuthorizeUri = "https://www.flickr.com/services/oauth/authorize",
+      oauthAccessTokenUri = "https://www.flickr.com/services/oauth/access_token",
+      oauthConsumerKey = encodeUtf8 apiKey,
+      -- Secret from https://www.flickr.com/services/apps/by/...
+      oauthConsumerSecret = apiSecret,
+      oauthCallback = Just "https://gist.github.com/dzhus/0bf2a8b1990c288315411ce69bca56df"
+    }
 
 -- Results from authorize URL redirect
 persistedAccessToken :: Maybe Credential
-persistedAccessToken = Just Credential {unCredential = [("fullname","Dmitry Djouce"),("oauth_token","72157714614929972-9e8de28f8f2bf657"),("oauth_token_secret","4366f00aefaa68dd"),("user_nsid","46721940@N00"),("username","Dmitry Djouce")]}
+persistedAccessToken = Just Credential {unCredential = [("fullname", "Dmitry Djouce"), ("oauth_token", "72157714614929972-9e8de28f8f2bf657"), ("oauth_token_secret", "4366f00aefaa68dd"), ("user_nsid", "46721940@N00"), ("username", "Dmitry Djouce")]}
 
 -- | Request OAuth 1.0a authorisation with Flickr.
 auth :: Manager -> IO Credential
@@ -292,9 +292,12 @@ auth mgr = do
 
   let authorizationUrl = format (s % "&perms=write") $ fromString $ authorizeUrl flickrOAuth tmpCred
   putStrLn $
-    format ("To authorize flickr-promoter, open the following URL: " %
-             s % "\n\nWhen you complete authorisation, copy the URL from the address bar here:\n")
-    authorizationUrl
+    format
+      ( "To authorize flickr-promoter, open the following URL: "
+          % s
+          % "\n\nWhen you complete authorisation, copy the URL from the address bar here:\n"
+      )
+      authorizationUrl
 
   mkURI <$> getLine >>= \case
     Just authorizedUrl ->
@@ -305,25 +308,30 @@ auth mgr = do
 
 -- | Generate OAuth 1.0a signature base string as per
 -- <https://oauth.net/core/1.0a/#anchor13>.
-oauthBaseString
-  :: ClientEnv
-  -> Request
-  -> LByteString
-oauthBaseString env req = fromStrict $ intercalate "&"
-  [ requestMethod req
-  , ((baseUrl env & showBaseUrl & BS.pack) <>
-     (requestPath req & toLazyByteString & toStrict)) & urlEncode True
-  , requestQueryString req & toList & sort & renderQuery False & urlEncode True
-  ]
+oauthBaseString ::
+  ClientEnv ->
+  Request ->
+  LByteString
+oauthBaseString env req =
+  fromStrict $
+    intercalate
+      "&"
+      [ requestMethod req,
+        ( (baseUrl env & showBaseUrl & BS.pack)
+            <> (requestPath req & toLazyByteString & toStrict)
+        )
+          & urlEncode True,
+        requestQueryString req & toList & sort & renderQuery False & urlEncode True
+      ]
 
 -- | Sign a request as per <https://oauth.net/core/1.0a/#anchor15>. We
 -- only support HMAC-SHA1 signatures
-generateSignature
-  :: OAuth
-  -> Credential
-  -> ClientEnv
-  -> Request
-  -> ByteString
+generateSignature ::
+  OAuth ->
+  Credential ->
+  ClientEnv ->
+  Request ->
+  ByteString
 generateSignature oa cred env req =
   case (oauthSignatureMethod oa, lookup "oauth_token_secret" $ unCredential cred) of
     (HMACSHA1, Just tokenSecret) ->
@@ -333,16 +341,16 @@ generateSignature oa cred env req =
     (_, Nothing) -> error "Can't sign a request without oauth_token_secret in credential"
     _ -> error "Unsupported signature method"
 
-signRequest
-  :: OAuth
-  -> Credential
-  -> ClientEnv
-  -> Text
-  -- ^ @oauth_nonce@
-  -> POSIXTime
-  -- ^ @oauth_timestamp@
-  -> Request
-  -> Request
+signRequest ::
+  OAuth ->
+  Credential ->
+  ClientEnv ->
+  -- | @oauth_nonce@
+  Text ->
+  -- | @oauth_timestamp@
+  POSIXTime ->
+  Request ->
+  Request
 signRequest oa cred env nonce ts req =
   case lookup "oauth_token" $ unCredential cred of
     Just oauth_token ->
@@ -350,13 +358,14 @@ signRequest oa cred env nonce ts req =
       where
         -- https://oauth.net/core/1.0a/#anchor12
         add f v = appendToQueryString f (Just v)
-        req' = req &
-          add "oauth_consumer_key" (decodeUtf8 $ oauthConsumerKey oa) &
-          add "oauth_nonce" nonce &
-          add "oauth_signature_method" "HMAC-SHA1" &
-          add "oauth_timestamp" (tshow (round (nominalDiffTimeToSeconds ts) :: Integer)) &
-          add "oauth_token" (decodeUtf8 oauth_token) &
-          add "oauth_version" "1.0"
+        req' =
+          req
+            & add "oauth_consumer_key" (decodeUtf8 $ oauthConsumerKey oa)
+            & add "oauth_nonce" nonce
+            & add "oauth_signature_method" "HMAC-SHA1"
+            & add "oauth_timestamp" (tshow (round (nominalDiffTimeToSeconds ts) :: Integer))
+            & add "oauth_token" (decodeUtf8 oauth_token)
+            & add "oauth_version" "1.0"
     Nothing -> error "Can't sign a request without oauth_token in credential"
 
 -- TODO Figure out what is AuthClientData if it varies with each
@@ -364,12 +373,12 @@ signRequest oa cred env nonce ts req =
 type instance AuthClientData (AuthProtect "oauth") = ()
 
 -- | servant-client interface for OAuth 1.0a
-runOAuthenticated
-  :: OAuth
-  -> Credential
-  -> (AuthenticatedRequest (AuthProtect "oauth") -> ClientM r)
-  -> ClientEnv
-  -> IO (Either ClientError r)
+runOAuthenticated ::
+  OAuth ->
+  Credential ->
+  (AuthenticatedRequest (AuthProtect "oauth") -> ClientM r) ->
+  ClientEnv ->
+  IO (Either ClientError r)
 runOAuthenticated oa cred act env = do
   nonce <- replicateM 10 $ randomRIO ('a', 'z')
   ts <- getPOSIXTime
@@ -389,8 +398,8 @@ main = do
 
   (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
   Right ruResp <- runOAuthenticated flickrOAuth accessToken (photosRecentlyUpdated (Just minTs) (Just 0) (Just 10) (Just $ CSL ["views"])) env
-
-  let photoId = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
+  print ruResp
+  let photoId = ruResp & photos & getField @"photo" & headMay & liftM (getField @"id")
 
   (print =<<) $ runClientM (photosGetInfo (Just apiKey) photoId) env
   (print =<<) $ runClientM (photosGetAllContexts (Just apiKey) photoId) env

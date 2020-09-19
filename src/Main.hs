@@ -9,6 +9,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -42,7 +43,7 @@ module Main where
 import ClassyPrelude hiding (any)
 import Control.Monad.Fail
 import Data.Aeson
-import Data.Binary.Builder
+import Data.Binary.Builder hiding (empty)
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
@@ -63,17 +64,24 @@ import System.Random
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
-import Turtle.Format ((%), format, s)
+import Turtle.Format (format, s, (%))
 import Web.Authenticate.OAuth
 
 newtype PhotoId = PhotoId Text
   deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
 
 newtype GroupId = GroupId Text
-  deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
+  deriving newtype
+    ( FromJSON,
+      IsString,
+      Ord,
+      Eq,
+      Show,
+      ToHttpApiData
+    )
 
 newtype Tag = Tag Text
-  deriving (Show)
+  deriving (Eq, Ord, Show)
 
 newtype Location = Location {unLocation :: Text}
   deriving (Show)
@@ -81,6 +89,7 @@ newtype Location = Location {unLocation :: Text}
 data Photo = Photo
   { id :: PhotoId,
     tags :: Set Tag,
+    groups :: Set GroupId,
     location :: Location
   }
   deriving (Show)
@@ -147,6 +156,17 @@ data FlickrLocation = FlickrLocation
   }
   deriving (Generic, FromJSON, Show)
 
+extractLocation :: FlickrLocation -> Location
+extractLocation loc =
+  Location $
+    intercalate
+      ", "
+      [ loc & country & _content,
+        loc & region & _content,
+        fromMaybe "" (loc & county & fmap _content),
+        loc & locality & _content
+      ]
+
 data FlickrPhoto = FlickrPhoto
   { location :: FlickrLocation,
     tags :: FlickrTags
@@ -156,6 +176,9 @@ data FlickrPhoto = FlickrPhoto
 data FlickrTags = FlickrTags
   {tag :: [FlickrContent]}
   deriving (Generic, FromJSON, Show)
+
+extractTags :: FlickrTags -> Set Tag
+extractTags (FlickrTags tags) = setFromList $ map (Tag . _content) tags
 
 data RecentlyUpdatedResponse = RecentlyUpdatedResponse
   { photos :: FlickrPhotos
@@ -212,6 +235,11 @@ data GetAllContextsResponse = GetAllContextsResponse
   { pool :: Maybe [FlickrPool]
   }
   deriving (Generic, FromJSON, Show)
+
+extractGroups :: GetAllContextsResponse -> Set GroupId
+extractGroups (GetAllContextsResponse Nothing) = mempty
+extractGroups (GetAllContextsResponse (Just pools)) =
+  map (getField @"id") pools & setFromList
 
 -- TODO Client functions must have tagged arguments automatically
 --
@@ -386,6 +414,17 @@ runOAuthenticated oa cred act env = do
       authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
   runClientM (act authenticator) env
 
+gatherPhotoInfo :: Text -> PhotoId -> ClientM Photo
+gatherPhotoInfo key photoId = do
+  PhotoResponse {..} <- photosGetInfo (Just key) (Just photoId)
+  contexts <- photosGetAllContexts (Just key) (Just photoId)
+  return $
+    Photo
+      photoId
+      (photo & getField @"tags" & extractTags)
+      (extractGroups contexts)
+      (photo & getField @"location" & extractLocation)
+
 main :: IO ()
 main = do
   mgr <- newTlsManager
@@ -399,7 +438,8 @@ main = do
   (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
   Right ruResp <- runOAuthenticated flickrOAuth accessToken (photosRecentlyUpdated (Just minTs) (Just 0) (Just 10) (Just $ CSL ["views"])) env
   print ruResp
-  let photoId = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
 
-  (print =<<) $ runClientM (photosGetInfo (Just apiKey) photoId) env
-  (print =<<) $ runClientM (photosGetAllContexts (Just apiKey) photoId) env
+  -- Use first photo
+  let (Just photoId) = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
+
+  (print =<<) $ runClientM (gatherPhotoInfo apiKey photoId) env

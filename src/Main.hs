@@ -399,7 +399,7 @@ main = do
   (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
   Right ruResp <- runOAuthenticated flickrOAuth accessToken (photosRecentlyUpdated (Just minTs) (Just 0) (Just 10) (Just $ CSL ["views"])) env
   print ruResp
-  let photoId = ruResp & photos & getField @"photo" & headMay & liftM (getField @"id")
+  let photoId = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
 
   (print =<<) $ runClientM (photosGetInfo (Just apiKey) photoId) env
   (print =<<) $ runClientM (photosGetAllContexts (Just apiKey) photoId) env

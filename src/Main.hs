@@ -96,7 +96,8 @@ data Photo = Photo
     title :: Text,
     tags :: Set Tag,
     groups :: Set GroupId,
-    location :: Location
+    location :: Location,
+    faves :: Word
   }
   deriving (Show)
 
@@ -210,7 +211,7 @@ instance FromJSON BoolFromBit where
   parseJSON (Number _) = pure $ BoolFromBit False
   parseJSON _ = fail "Could not parse BoolFromBit"
 
-newtype WordFromString = WordFromString Word
+newtype WordFromString = WordFromString {unWordFromString :: Word}
   deriving (Show)
 
 instance FromJSON WordFromString where
@@ -277,6 +278,10 @@ data PoolsAddResponse = PoolsAddResponse
   }
   deriving (Generic, FromJSON, Show)
 
+data PhotoFavoritesResponse = PhotoFavoritesResponse
+  {total :: WordFromString}
+  deriving (Generic, FromJSON)
+
 -- TODO Client functions must have tagged arguments automatically, not
 -- blind `ty` from `QueryParam lab ty`
 --
@@ -292,9 +297,10 @@ type FlickrAPI =
            :<|> FlickrMethod "flickr.groups.pools.add" :> QueryParam "photo_id" PhotoId :> QueryParam "group_id" GroupId :> AuthProtect "oauth" :> Get '[JSON] PoolsAddResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
+           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getFavorites" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoFavoritesResponse
        )
 
-testLogin :<|> peopleGetPhotos :<|> poolsAdd :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
+testLogin :<|> peopleGetPhotos :<|> poolsAdd :<|> photosGetAllContexts :<|> photosGetInfo :<|> photosGetFavorites = client (Proxy :: Proxy FlickrAPI)
 
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key
@@ -444,6 +450,7 @@ gatherPhotoInfo key fpd = do
   let photoId = fpd & getField @"id"
   PhotoResponse {..} <- photosGetInfo (Just key) (Just photoId)
   contexts <- photosGetAllContexts (Just key) (Just photoId)
+  faves <- photosGetFavorites (Just key) (Just photoId)
   return $
     Photo
       photoId
@@ -451,6 +458,7 @@ gatherPhotoInfo key fpd = do
       (photo & getField @"tags" & extractTags)
       (extractGroups contexts)
       (photo & getField @"location" & extractLocation)
+      (faves & getField @"total" & unWordFromString)
 
 -- | Which groups to post this photo to
 candidateGroups :: Photo -> Set GroupId

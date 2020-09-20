@@ -307,6 +307,7 @@ process = do
 apiKey :: Text
 apiKey = "53eeb65b3ecfc822e4cdfa8440e058fd"
 
+apiSecret :: ByteString
 apiSecret = "2f5d176193666a48"
 
 flickrOAuth :: OAuth
@@ -443,7 +444,6 @@ main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
-      minTs = 0
       me = UserId "me"
 
   accessToken <- case persistedAccessToken of

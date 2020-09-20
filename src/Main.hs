@@ -52,7 +52,7 @@ flickrOAuth =
 
 -- Results from authorize URL redirect
 persistedAccessToken :: Maybe Credential
-persistedAccessToken = Just Credential {unCredential = [("fullname", "Dmitry Djouce"), ("oauth_token", "72157714614929972-9e8de28f8f2bf657"), ("oauth_token_secret", "4366f00aefaa68dd"), ("user_nsid", "46721940@N00"), ("username", "Dmitry Djouce")]}
+persistedAccessToken = Just Credential {unCredential = [("fullname","Dmitry Djouce"),("oauth_token","72157716045986163-78e9b05ad8b18b40"),("oauth_token_secret","04a88aaa5c872e0c"),("user_nsid","46721940@N00"),("username","Dmitry Djouce")]}
 
 -- | Request OAuth 1.0a authorisation with Flickr.
 auth :: Manager -> IO Credential

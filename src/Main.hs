@@ -499,7 +499,12 @@ main = do
     forM_ photosWithInfo $ \p -> do
       let candidates = candidateGroups p
       when (not $ null candidates) $ do
-        logDebugN $ format (s % "/" % s % " should be in groups: " % s) (getField @"title" p) (unPhotoId $ getField @"id" p) (intercalate ", " $ map tshow $ toList candidates)
+        logDebugN $
+          format
+            (s % "/" % s % " should be in groups: " % s)
+            (getField @"title" p)
+            (unPhotoId $ getField @"id" p)
+            (intercalate ", " $ map tshow $ toList candidates)
         forM_ (toList candidates) $
           \c -> do
             -- TODO This can still fail if we get throttled on two

@@ -558,3 +558,10 @@ main = do
                       (tshow other)
 
     readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")
+    readTVarIO throttledGroups >>= \tg ->
+      when (not $ null tg) $
+        logInfoN $
+          format
+            ("Posting limits reached for " % d % " groups: " % s)
+            (length tg)
+            (tshow tg)

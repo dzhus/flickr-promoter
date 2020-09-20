@@ -452,10 +452,9 @@ main = do
 
   -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-  Right ruResp <- runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "geo", "tags", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
-  print ruResp
+  Right ruResp <- runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
 
-  -- -- Use first photo
-  -- let (Just photoId) = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
+  let photoIds = map (getField @"id") (ruResp & photos & getField @"photo")
+  putStrLn $ "Last photos are " <> tshow photoIds
 
-  -- (print =<<) $ runClientM (gatherPhotoInfo apiKey photoId) env
+  (print =<<) $ mapConcurrently (\photoId -> runClientM (gatherPhotoInfo apiKey photoId) env) photoIds

@@ -35,6 +35,7 @@ module Main where
 
 import ClassyPrelude hiding (any)
 import Control.Monad.Fail
+import Control.Monad.Logger
 import Data.Aeson
 import Data.Binary.Builder hiding (empty)
 import qualified Data.ByteString.Base64 as B64
@@ -57,7 +58,7 @@ import System.Random
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
-import Turtle.Format (format, s, (%))
+import Turtle.Format (format, s, d, (%))
 import Web.Authenticate.OAuth
 
 newtype PhotoId = PhotoId Text
@@ -91,6 +92,7 @@ newtype Location = Location {unLocation :: Text}
 
 data Photo = Photo
   { id :: PhotoId,
+    title :: Text,
     tags :: Set Tag,
     groups :: Set GroupId,
     location :: Location
@@ -267,9 +269,9 @@ instance ToHttpApiData FlickrPrivacyFilter where
 type FlickrAPI =
   FlickrResponseFormat
     :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
-           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
-           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
-           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
+         :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
+         :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
+         :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
        )
 
 testLogin :<|> peopleGetPhotos :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
@@ -429,16 +431,26 @@ runOAuthenticated oa cred act env = do
       authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
   runClientM (act authenticator) env
 
-gatherPhotoInfo :: Text -> PhotoId -> ClientM Photo
-gatherPhotoInfo key photoId = do
+gatherPhotoInfo :: Text -> FlickrPhotoDigest -> ClientM Photo
+gatherPhotoInfo key fpd = do
+  let photoId = fpd & getField @"id"
   PhotoResponse {..} <- photosGetInfo (Just key) (Just photoId)
   contexts <- photosGetAllContexts (Just key) (Just photoId)
   return $
     Photo
       photoId
+      (fpd & getField @"title")
       (photo & getField @"tags" & extractTags)
       (extractGroups contexts)
       (photo & getField @"location" & extractLocation)
+
+-- | Which groups to post this photo to
+candidateGroups :: Photo -> Set GroupId
+candidateGroups photo = setFromList $ catMaybes $ (flip map) rules $
+  \(Rule (predicate, targetGroup)) ->
+    if predicate photo && targetGroup `notElem` (groups photo)
+    then Just targetGroup
+    else Nothing
 
 main :: IO ()
 main = do
@@ -446,15 +458,21 @@ main = do
   let env = mkClientEnv mgr flickrApi
       me = UserId "me"
 
-  accessToken <- case persistedAccessToken of
-    Nothing -> auth mgr
-    Just t -> return t
+  runStdoutLoggingT $ do
+    accessToken <- case persistedAccessToken of
+      Nothing -> liftIO $ auth mgr
+      Just t -> return t
 
-  -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
+    -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-  Right ruResp <- runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
+    Right ruResp <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
 
-  let photoIds = map (getField @"id") (ruResp & photos & getField @"photo")
-  putStrLn $ "Last photos are " <> tshow photoIds
+    let photoDigests = ruResp & photos & getField @"photo"
 
-  (print =<<) $ mapConcurrently (\photoId -> runClientM (gatherPhotoInfo apiKey photoId) env) photoIds
+    logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
+
+    photosWithInfo <- liftIO $ rights <$> mapConcurrently (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
+    logInfoN "Fetched photo infos"
+
+    forM_ photosWithInfo $ \p -> do
+      logInfoN $ format ("Will post " % s % " to groups: " % s) (getField @"title" p) (tshow $ candidateGroups p)

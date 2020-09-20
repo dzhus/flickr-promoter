@@ -25,6 +25,7 @@ dependencies:
   - http-media
   - http-types
   - microlens
+  - monad-logger
   - modern-uri
   - polysemy
   - random

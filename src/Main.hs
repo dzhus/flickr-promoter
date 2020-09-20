@@ -270,18 +270,19 @@ type FlickrAPI =
   FlickrResponseFormat
     :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
          :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
+         :<|> FlickrMethod "flickr.groups.pools.add" :> QueryParam "photo_id" PhotoId :> QueryParam "group_id" GroupId :> AuthProtect "oauth" :> Get '[JSON] Value
          :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
          :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
        )
 
-testLogin :<|> peopleGetPhotos :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
+testLogin :<|> peopleGetPhotos :<|> poolsAdd :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key
 
 rules :: [Rule]
 rules =
-  [ any .=> "34427469792@N01",
+  [ any .=> "769299@N22",
     locatedIn "Prague" .=> "48889111127@N01",
     locatedIn "Bavaria" .=> "860590@N23",
     locatedIn "Crimea" .=> "60453939@N00",
@@ -290,18 +291,6 @@ rules =
 
 flickrApi :: BaseUrl
 flickrApi = BaseUrl Https "www.flickr.com" 443 "/services/rest/"
-
-postToGroup = error "postToGroup"
-
-fetchMyPhotos :: m [Photo]
-fetchMyPhotos = error "fetchMyPhotos"
-
-process :: IO ()
-process = do
-  photos <- fetchMyPhotos
-  forM_ photos $ \p -> do
-    let photoGroups = mapMaybe (\(Rule (test, g)) -> if test p then Just g else Nothing) rules
-    forM_ photoGroups (postToGroup p)
 
 -- TODO Is this superseded by
 -- &oauth_consumer_key=653e7a6ecc1d528c516cc8f92cf98611 in API
@@ -466,13 +455,15 @@ main = do
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
     Right ruResp <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
-
     let photoDigests = ruResp & photos & getField @"photo"
-
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
     photosWithInfo <- liftIO $ rights <$> mapConcurrently (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
-    logInfoN "Fetched photo infos"
+    logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 
     forM_ photosWithInfo $ \p -> do
-      logInfoN $ format ("Will post " % s % " to groups: " % s) (getField @"title" p) (tshow $ candidateGroups p)
+      let candidates = candidateGroups p
+      logInfoN $ format ("Will post " % s % " to groups: " % s) (getField @"title" p) (tshow candidates)
+      posting <- liftIO $ forM (toList candidates) $
+        \c -> runOAuthenticated flickrOAuth accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
+      logDebugN $ tshow posting

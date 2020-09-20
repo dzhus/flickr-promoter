@@ -42,6 +42,7 @@ import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
 import Data.Proxy
+import Data.Scientific
 import Data.Text.Read
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
@@ -58,10 +59,10 @@ import System.Random
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
-import Turtle.Format (format, s, d, (%))
+import Turtle.Format (d, format, s, (%))
 import Web.Authenticate.OAuth
 
-newtype PhotoId = PhotoId Text
+newtype PhotoId = PhotoId {unPhotoId :: Text}
   deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
 
 newtype GroupId = GroupId Text
@@ -253,10 +254,28 @@ data FlickrContentType = PhotosOnly
 instance ToHttpApiData FlickrContentType where
   toQueryParam PhotosOnly = "1"
 
-data FlickrPrivacyFilter = Public -- | Friends | Family | FriendsAndFamily | Private
+data FlickrPrivacyFilter = Public -- TODO | Friends | Family | FriendsAndFamily | Private
 
 instance ToHttpApiData FlickrPrivacyFilter where
   toQueryParam Public = "1"
+
+data Status = Ok | Fail deriving (Generic, Show)
+
+instance FromJSON Status where
+  parseJSON = genericParseJSON defaultOptions {constructorTagModifier = camelTo2 '_'}
+
+data PoolResponseCode = GroupLimit | UnknownCode Scientific deriving (Show)
+
+instance FromJSON PoolResponseCode where
+  parseJSON = withScientific "PoolResposeCode" $ \case
+    5 -> pure GroupLimit
+    o -> pure $ UnknownCode o
+
+data PoolsAddResponse = PoolsAddResponse
+  { stat :: Status,
+    code :: Maybe PoolResponseCode
+  }
+  deriving (Generic, FromJSON, Show)
 
 -- TODO Client functions must have tagged arguments automatically, not
 -- blind `ty` from `QueryParam lab ty`
@@ -269,10 +288,10 @@ instance ToHttpApiData FlickrPrivacyFilter where
 type FlickrAPI =
   FlickrResponseFormat
     :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
-         :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
-         :<|> FlickrMethod "flickr.groups.pools.add" :> QueryParam "photo_id" PhotoId :> QueryParam "group_id" GroupId :> AuthProtect "oauth" :> Get '[JSON] Value
-         :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
-         :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
+           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
+           :<|> FlickrMethod "flickr.groups.pools.add" :> QueryParam "photo_id" PhotoId :> QueryParam "group_id" GroupId :> AuthProtect "oauth" :> Get '[JSON] PoolsAddResponse
+           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
+           :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
        )
 
 testLogin :<|> peopleGetPhotos :<|> poolsAdd :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
@@ -435,17 +454,22 @@ gatherPhotoInfo key fpd = do
 
 -- | Which groups to post this photo to
 candidateGroups :: Photo -> Set GroupId
-candidateGroups photo = setFromList $ catMaybes $ (flip map) rules $
-  \(Rule (predicate, targetGroup)) ->
-    if predicate photo && targetGroup `notElem` (groups photo)
-    then Just targetGroup
-    else Nothing
+candidateGroups photo = setFromList $
+  catMaybes $
+    (flip map) rules $
+      \(Rule (predicate, targetGroup)) ->
+        if predicate photo && targetGroup `notElem` (groups photo)
+          then Just targetGroup
+          else Nothing
 
 main :: IO ()
 main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
       me = UserId "me"
+      photoCount = 10
+
+  throttledGroups <- newTVarIO (setFromList [])
 
   runStdoutLoggingT $ do
     accessToken <- case persistedAccessToken of
@@ -454,16 +478,36 @@ main = do
 
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-    Right ruResp <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
+    Right ruResp <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just photoCount) (Just 0)) env
     let photoDigests = ruResp & photos & getField @"photo"
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
     photosWithInfo <- liftIO $ rights <$> mapConcurrently (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
     logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 
+    -- TODO Try to split out servant-specific IO with polysemy
+
     forM_ photosWithInfo $ \p -> do
       let candidates = candidateGroups p
-      logInfoN $ format ("Will post " % s % " to groups: " % s) (getField @"title" p) (tshow candidates)
-      posting <- liftIO $ forM (toList candidates) $
-        \c -> runOAuthenticated flickrOAuth accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
-      logDebugN $ tshow posting
+      when (not $ null candidates) $ do
+        logDebugN $ format (s % "/" % s % " should be in groups: " % s) (getField @"title" p) (unPhotoId $ getField @"id" p) (intercalate ", " $ map tshow $ toList candidates)
+        forM_ (toList candidates) $
+          \c -> do
+            -- TODO This can still fail if we get throttled on two
+            -- concurrent requests to add to the same group
+            throttled <- readTVarIO throttledGroups
+            when (c `notMember` (throttled :: Set GroupId)) $ do
+              resp <- liftIO $ runOAuthenticated flickrOAuth accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
+              case resp of
+                Right (PoolsAddResponse Ok _) ->
+                  logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
+                Right (PoolsAddResponse Fail (Just GroupLimit)) -> do
+                  logWarnN $ format ("Reached group limit for " % s) (tshow c)
+                  atomically $ modifyTVar' throttledGroups (insertSet c)
+                other ->
+                  logErrorN $
+                    format
+                      ("Unknown error posting " % s % " to " % s % ": " % s)
+                      (tshow p)
+                      (tshow c)
+                      (tshow other)

@@ -29,6 +29,7 @@ dependencies:
   - modern-uri
   - polysemy
   - random
+  - scientific
   - servant
   - servant-client
   - servant-client-core

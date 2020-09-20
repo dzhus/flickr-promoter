@@ -233,6 +233,11 @@ data FlickrPhotos = FlickrPhotos
   }
   deriving (Generic, FromJSON, Show)
 
+data FlickrPhotoFavorites = FlickrPhotoFavorites
+  { total :: WordFromString
+  }
+  deriving (Generic, FromJSON, Show)
+
 newtype CommaSeparatedList a = CSL [a]
   deriving (Show, Generic, Foldable, Functor)
 
@@ -283,8 +288,9 @@ data PoolsAddResponse = PoolsAddResponse
   deriving (Generic, FromJSON, Show)
 
 data PhotoFavoritesResponse = PhotoFavoritesResponse
-  {total :: WordFromString}
-  deriving (Generic, FromJSON)
+  { photo :: FlickrPhotoFavorites
+  }
+  deriving (Generic, FromJSON, Show)
 
 -- TODO Client functions must have tagged arguments automatically, not
 -- blind `ty` from `QueryParam lab ty`
@@ -482,7 +488,7 @@ gatherPhotoInfo key fpd = do
       (photo & getField @"tags" & extractTags)
       (extractGroups contexts)
       (photo & getField @"location" & extractLocation)
-      (faves & getField @"total" & unWordFromString)
+      (faves & getField @"photo" & getField @"total" & unWordFromString)
 
 -- | Which groups to post this photo to
 candidateGroups :: Photo -> Set GroupId

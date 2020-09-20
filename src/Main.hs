@@ -18,16 +18,9 @@
 
 -- | So the plan is:
 --
--- Fetch list of photos:
+-- Fetch "my" list of photos:
 --
--- https://www.flickr.com/services/api/flickr.photos.recentlyUpdated.html
---
--- Fetch information for each photo, meta and which pools is it a
--- member of (with caching!)
---
--- https://www.flickr.com/services/api/explore/flickr.photos.getInfo
---
--- https://www.flickr.com/services/api/flickr.photos.getAllContexts.html
+-- https://www.flickr.com/services/api/flickr.people.getPhotos.html
 --
 -- Find what to post where
 --
@@ -71,6 +64,16 @@ newtype PhotoId = PhotoId Text
   deriving newtype (FromJSON, IsString, Show, ToHttpApiData)
 
 newtype GroupId = GroupId Text
+  deriving newtype
+    ( FromJSON,
+      IsString,
+      Ord,
+      Eq,
+      Show,
+      ToHttpApiData
+    )
+
+newtype UserId = UserId Text
   deriving newtype
     ( FromJSON,
       IsString,
@@ -180,17 +183,19 @@ data FlickrTags = FlickrTags
 extractTags :: FlickrTags -> Set Tag
 extractTags (FlickrTags tags) = setFromList $ map (Tag . _content) tags
 
-data RecentlyUpdatedResponse = RecentlyUpdatedResponse
+data GetPhotosResponse = GetPhotosResponse
   { photos :: FlickrPhotos
   }
   deriving (Generic, FromJSON, Show)
 
 data FlickrPhotoDigest = FlickrPhotoDigest
   { id :: PhotoId,
-    ispublic :: BoolFromBit,
-    views :: Maybe WordFromString
-    -- We're not requesting tags or geo here as it's not formatted in a
-    -- structured way in recentlyUpdated response.
+    views :: Maybe WordFromString,
+    title :: Text,
+    description :: FlickrContent
+    -- We're not requesting tags or geo here as it's not formatted in
+    -- a structured way in recentlyUpdated (tags is just a string and
+    -- geo only has lon/lat, not locality name)
   }
   deriving (Generic, FromJSON, Show)
 
@@ -241,7 +246,18 @@ extractGroups (GetAllContextsResponse Nothing) = mempty
 extractGroups (GetAllContextsResponse (Just pools)) =
   map (getField @"id") pools & setFromList
 
--- TODO Client functions must have tagged arguments automatically
+data FlickrContentType = PhotosOnly
+
+instance ToHttpApiData FlickrContentType where
+  toQueryParam PhotosOnly = "1"
+
+data FlickrPrivacyFilter = Public -- | Friends | Family | FriendsAndFamily | Private
+
+instance ToHttpApiData FlickrPrivacyFilter where
+  toQueryParam Public = "1"
+
+-- TODO Client functions must have tagged arguments automatically, not
+-- blind `ty` from `QueryParam lab ty`
 --
 -- TODO Combine supplying api_key with oauth helper?
 --
@@ -251,14 +267,12 @@ extractGroups (GetAllContextsResponse (Just pools)) =
 type FlickrAPI =
   FlickrResponseFormat
     :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
-           :<|> FlickrMethod "flickr.photos.recentlyUpdated" :> QueryParam "min_date" POSIXTime :> QueryParam "page" Word :> QueryParam "per_page" Word :> QueryParam "extras" (CommaSeparatedList Text) :> AuthProtect "oauth" :> Get '[JSON] RecentlyUpdatedResponse
+           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse
        )
 
--- TODO Select only public photos
-
-testLogin :<|> photosRecentlyUpdated :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
+testLogin :<|> peopleGetPhotos :<|> photosGetAllContexts :<|> photosGetInfo = client (Proxy :: Proxy FlickrAPI)
 
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key
@@ -430,16 +444,18 @@ main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
       minTs = 0
+      me = UserId "me"
 
   accessToken <- case persistedAccessToken of
     Nothing -> auth mgr
     Just t -> return t
 
-  (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
-  Right ruResp <- runOAuthenticated flickrOAuth accessToken (photosRecentlyUpdated (Just minTs) (Just 0) (Just 10) (Just $ CSL ["views"])) env
+  -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
+
+  Right ruResp <- runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "geo", "tags", "description"]) (Just PhotosOnly) (Just Public) (Just 10) (Just 0)) env
   print ruResp
 
-  -- Use first photo
-  let (Just photoId) = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
+  -- -- Use first photo
+  -- let (Just photoId) = ruResp & photos & getField @"photo" & headMay & fmap (getField @"id")
 
-  (print =<<) $ runClientM (gatherPhotoInfo apiKey photoId) env
+  -- (print =<<) $ runClientM (gatherPhotoInfo apiKey photoId) env

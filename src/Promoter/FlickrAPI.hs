@@ -1,21 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-
 module Promoter.FlickrAPI where
 
 import ClassyPrelude hiding (any)
@@ -27,11 +9,10 @@ import Data.Text.Read
 import GHC.Records
 import GHC.TypeLits
 import Lens.Micro
+import Promoter.Types
 import Servant.API hiding (uriQuery)
 import Servant.Client
 import Servant.Client.Core
-
-import Promoter.Types
 
 data FlickrMethod (a :: Symbol)
 

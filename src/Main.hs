@@ -487,8 +487,8 @@ main = do
 
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-    Right ruResp <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just photoCount) (Just 0)) env
-    let photoDigests = ruResp & photos & getField @"photo"
+    Right latest <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just photoCount) (Just 0)) env
+    let photoDigests = latest & photos & getField @"photo"
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
     photosWithInfo <- liftIO $ rights <$> mapConcurrently (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests

@@ -87,6 +87,7 @@ newtype UserId = UserId Text
 
 newtype Tag = Tag Text
   deriving (Eq, Ord, Show)
+  deriving newtype IsString
 
 newtype Location = Location {unLocation :: Text}
   deriving (Show)
@@ -113,6 +114,9 @@ any = const True
 -- False
 locatedIn :: Text -> Photo -> Bool
 locatedIn text = isInfixOf text . unLocation . getField @"location"
+
+hasTag :: Tag -> Photo -> Bool
+hasTag tag p = tag `elem` (p & getField @"tags")
 
 data FlickrMethod (a :: Symbol)
 
@@ -305,13 +309,33 @@ testLogin :<|> peopleGetPhotos :<|> poolsAdd :<|> photosGetAllContexts :<|> phot
 -- TODO Wrap raw methods in something that will automatically provide
 -- api_key
 
+moreFavesThan :: Word -> (Photo -> Bool)
+moreFavesThan threshold photo = (faves photo) >= threshold
+
 rules :: [Rule]
 rules =
-  [ any .=> "769299@N22",
+  [ moreFavesThan 5 .=> "1755214@N23", -- https://www.flickr.com/groups/the-best-of-flickr/
+    moreFavesThan 5 .=> "1136489@N22", -- https://www.flickr.com/groups/1136489@N22/
+    moreFavesThan 5 .=> "1902869@N24", -- https://www.flickr.com/groups/fr_unofficial/
+    moreFavesThan 5 .=> "34427469792@N01", -- https://www.flickr.com/groups/central/
+    moreFavesThan 5 .=> "3537491@N25", -- https://www.flickr.com/groups/3537491@N25/
+    moreFavesThan 5 .=> "3873469@N24", -- https://www.flickr.com/groups/artiste24/
+    any .=> "2677807@N23", -- https://www.flickr.com/groups/amateurphotographer/
+    any .=> "43501458@N00", -- https://www.flickr.com/groups/amateurs/
+    any .=> "769299@N22", -- https://www.flickr.com/groups/769299@N22/
+    any .=> "2978869@N23", -- https://www.flickr.com/groups/2978869@N23/
+    locatedIn "England" .=> "35468144964@N01",
+    locatedIn "France" .=> "52241533836@N01",
+    locatedIn "Paris" .=> "36101698174@N01",
     locatedIn "Prague" .=> "48889111127@N01",
     locatedIn "Bavaria" .=> "860590@N23",
     locatedIn "Crimea" .=> "60453939@N00",
-    locatedIn "Lyon" .=> "13409106@N00"
+    locatedIn "Lyon" .=> "13409106@N00",
+    hasTag "landscape" .=> "81431815@N00", -- https://www.flickr.com/groups/natur/
+    hasTag "landscape" .=> "80148101@N00", -- https://www.flickr.com/groups/natureandlandscapes/
+    hasTag "landscape" .=> "13197975@N00", -- https://www.flickr.com/groups/13197975@N00/
+    hasTag "landscape" .=> "535727@N21", -- https://www.flickr.com/groups/worldlandscapes/
+    hasTag "landscape" .=> "1003995@N21" -- https://www.flickr.com/groups/landscape-beauty/
   ]
 
 flickrApi :: BaseUrl

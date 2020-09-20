@@ -196,11 +196,17 @@ data GetPhotosResponse = GetPhotosResponse
   }
   deriving (Generic, FromJSON, Show)
 
+data Media = PhotoMedia | VideoMedia deriving (Generic, Eq, Show)
+
+instance FromJSON Media where
+  parseJSON = genericParseJSON defaultOptions {constructorTagModifier = dropSuffix "_media" . camelTo2 '_'}
+
 data FlickrPhotoDigest = FlickrPhotoDigest
   { id :: PhotoId,
     views :: Maybe WordFromString,
     title :: Text,
-    description :: FlickrContent
+    description :: FlickrContent,
+    media :: Media
     -- We're not requesting tags or geo here as it's not formatted in
     -- a structured way in recentlyUpdated (tags is just a string and
     -- geo only has lon/lat, not locality name)
@@ -517,8 +523,9 @@ main = do
 
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-    Right latest <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description"]) (Just PhotosOnly) (Just Public) (Just photoCount) (Just 0)) env
-    let photoDigests = latest & photos & getField @"photo"
+    Right latest <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description", "media"]) (Just PhotosOnly) (Just Public) (Just photoCount) (Just 0)) env
+    -- Filter out videos as we don't want to post them to any groups
+    let photoDigests = latest & photos & getField @"photo" & filter ((== PhotoMedia) . media)
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
     photosWithInfo <- liftIO $ rights <$> mapConcurrently (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests

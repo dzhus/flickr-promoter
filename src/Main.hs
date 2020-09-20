@@ -87,7 +87,7 @@ newtype UserId = UserId Text
 
 newtype Tag = Tag Text
   deriving (Eq, Ord, Show)
-  deriving newtype IsString
+  deriving newtype (IsString)
 
 newtype Location = Location {unLocation :: Text}
   deriving (Show)
@@ -512,9 +512,15 @@ main = do
   mgr <- newTlsManager
   let env = mkClientEnv mgr flickrApi
       me = UserId "me"
-      photoCount = 10
+      -- This is our own per-group posting limit
+      photosPerGroup = 5
+      -- How many latest photos to fetch
+      maxPhotoCount = 500
 
-  throttledGroups <- newTVarIO (setFromList [])
+  -- Map from group IDs to "how many more photos can we post to that
+  -- group". Thus we can capture our own user-defined limits and
+  -- per-group posting limits.
+  groupLimits <- newTVarIO (mapFromList [] :: Map GroupId Word)
   postedCounter <- newTVarIO (0 :: Word)
 
   runStdoutLoggingT $ do
@@ -524,7 +530,7 @@ main = do
 
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-    Right latest <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description", "media"]) (Just PhotosOnly) (Just Public) (Just photoCount) (Just 0)) env
+    Right latest <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description", "media"]) (Just PhotosOnly) (Just Public) (Just maxPhotoCount) (Just 0)) env
     -- Filter out videos as we don't want to post them to any groups
     let photoDigests = latest & photos & getField @"photo" & filter ((== PhotoMedia) . media)
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
@@ -547,16 +553,23 @@ main = do
           \c -> do
             -- TODO This can still fail if we get throttled on two
             -- concurrent requests to add to the same group
-            throttled <- readTVarIO throttledGroups
-            when (c `notMember` (throttled :: Set GroupId)) $ do
+            canPost <- atomically $ do
+              gl <- readTVar groupLimits
+              case lookup c gl of
+                Just r -> return (r > 0)
+                Nothing -> return True
+            when canPost $ do
               resp <- liftIO $ runOAuthenticated flickrOAuth accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
               case resp of
                 Right (PoolsAddResponse Ok _) -> do
                   atomically $ modifyTVar' postedCounter (1 +)
+                  -- Update how many more photos can we post to this group
+                  atomically $ modifyTVar' groupLimits $ \gl ->
+                    insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
                   logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
                 Right (PoolsAddResponse Fail (Just GroupLimit)) -> do
                   logWarnN $ format ("Reached group limit for " % s) (tshow c)
-                  atomically $ modifyTVar' throttledGroups (insertSet c)
+                  atomically $ modifyTVar' groupLimits (insertMap c 0)
                 other ->
                   logErrorN $
                     format
@@ -566,10 +579,11 @@ main = do
                       (tshow other)
 
     readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")
-    readTVarIO throttledGroups >>= \tg ->
-      when (not $ null tg) $
+    readTVarIO groupLimits >>= \limits -> do
+      let depleted = filter (not . (> 0) . snd) (mapToList limits)
+      when (not $ null depleted) $
         logInfoN $
           format
             ("Posting limits reached for " % d % " groups: " % s)
-            (length tg)
-            (tshow tg)
+            (length depleted)
+            (tshow (map fst depleted))

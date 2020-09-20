@@ -470,6 +470,7 @@ main = do
       photoCount = 10
 
   throttledGroups <- newTVarIO (setFromList [])
+  postedCounter <- newTVarIO (0 :: Word)
 
   runStdoutLoggingT $ do
     accessToken <- case persistedAccessToken of
@@ -499,7 +500,8 @@ main = do
             when (c `notMember` (throttled :: Set GroupId)) $ do
               resp <- liftIO $ runOAuthenticated flickrOAuth accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
               case resp of
-                Right (PoolsAddResponse Ok _) ->
+                Right (PoolsAddResponse Ok _) -> do
+                  atomically $ modifyTVar' postedCounter (1 +)
                   logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
                 Right (PoolsAddResponse Fail (Just GroupLimit)) -> do
                   logWarnN $ format ("Reached group limit for " % s) (tshow c)
@@ -511,3 +513,5 @@ main = do
                       (tshow p)
                       (tshow c)
                       (tshow other)
+
+    readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")

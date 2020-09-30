@@ -230,8 +230,8 @@ main = do
                   atomically $ modifyTVar' groupLimits $ \gl ->
                     insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
                   logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
-                Right (PoolsAddResponse Fail (Just GroupLimit)) -> do
-                  logWarnN $ format ("Reached group limit for " % s) (tshow c)
+                Right (PoolsAddResponse Fail (Just err)) -> do
+                  logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow c) (tshow err)
                   atomically $ modifyTVar' groupLimits (insertMap c 0)
                 other ->
                   logErrorN $

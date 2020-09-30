@@ -203,7 +203,7 @@ main = do
 
     -- TODO Try to split out servant-specific IO with polysemy
 
-    forM_ photosWithInfo $ \p -> do
+    forM_ (sortOn (Down . faves) photosWithInfo) $ \p -> do
       let candidates = candidateGroups p
       when (not $ null candidates) $ do
         logDebugN $

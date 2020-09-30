@@ -13,6 +13,9 @@ import Lens.Micro
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
 import Network.HTTP.Types.URI
+import Promoter.FlickrAPI
+import Promoter.Processing
+import Promoter.Types
 import Servant.API hiding (uriQuery)
 import Servant.Client
 import Servant.Client.Core
@@ -22,10 +25,6 @@ import Text.URI.Lens
 import Text.URI.QQ
 import Turtle.Format (d, format, s, (%))
 import Web.Authenticate.OAuth
-
-import Promoter.FlickrAPI
-import Promoter.Processing
-import Promoter.Types
 
 -- TODO Is this superseded by
 -- &oauth_consumer_key=653e7a6ecc1d528c516cc8f92cf98611 in API
@@ -52,7 +51,7 @@ flickrOAuth =
 
 -- Results from authorize URL redirect
 persistedAccessToken :: Maybe Credential
-persistedAccessToken = Just Credential {unCredential = [("fullname","Dmitry Djouce"),("oauth_token","72157716045986163-78e9b05ad8b18b40"),("oauth_token_secret","04a88aaa5c872e0c"),("user_nsid","46721940@N00"),("username","Dmitry Djouce")]}
+persistedAccessToken = Just Credential {unCredential = [("fullname", "Dmitry Djouce"), ("oauth_token", "72157716045986163-78e9b05ad8b18b40"), ("oauth_token_secret", "04a88aaa5c872e0c"), ("user_nsid", "46721940@N00"), ("username", "Dmitry Djouce")]}
 
 -- | Request OAuth 1.0a authorisation with Flickr.
 auth :: Manager -> IO Credential
@@ -227,8 +226,9 @@ main = do
                 Right (PoolsAddResponse Ok _) -> do
                   atomically $ modifyTVar' postedCounter (1 +)
                   -- Update how many more photos can we post to this group
-                  atomically $ modifyTVar' groupLimits $ \gl ->
-                    insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
+                  atomically $
+                    modifyTVar' groupLimits $ \gl ->
+                      insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
                   logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
                 Right (PoolsAddResponse Fail (Just err)) -> do
                   logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow c) (tshow err)

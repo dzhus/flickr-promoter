@@ -16,7 +16,10 @@ any = const True
 -- | >>> locatedIn "UK"
 -- False
 locatedIn :: Text -> Photo -> Bool
-locatedIn text = isInfixOf text . unLocation . getField @"location"
+locatedIn text photo =
+  case getField @"location" photo of
+    Just loc -> isInfixOf text $ unLocation loc
+    Nothing -> False
 
 hasTag :: Tag -> Photo -> Bool
 hasTag tag p = tag `elem` (p & getField @"tags")

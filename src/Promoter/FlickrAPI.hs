@@ -75,7 +75,7 @@ extractLocation loc =
       ]
 
 data FlickrPhoto = FlickrPhoto
-  { location :: FlickrLocation,
+  { location :: Maybe FlickrLocation,
     tags :: FlickrTags
   }
   deriving (Generic, FromJSON, Show)

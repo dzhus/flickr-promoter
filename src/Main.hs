@@ -166,7 +166,7 @@ gatherPhotoInfo key fpd = do
       (fpd & getField @"title")
       (photo & getField @"tags" & extractTags)
       (extractGroups contexts)
-      (photo & getField @"location" & extractLocation)
+      (photo & getField @"location" & fmap extractLocation)
       (faves & getField @"photo" & getField @"total" & unWordFromString)
 
 main :: IO ()

@@ -140,6 +140,19 @@ signRequest oa cred env nonce ts req =
 -- request and needs IO
 type instance AuthClientData (AuthProtect "oauth") = ()
 
+authenticate ::
+  OAuth ->
+  Credential ->
+  ClientEnv ->
+  (AuthenticatedRequest (AuthProtect "oauth") -> r) ->
+  IO r
+authenticate oa cred env act = do
+  nonce <- replicateM 10 $ randomRIO ('a', 'z')
+  ts <- getPOSIXTime
+  let sign = signRequest oa cred env nonce ts
+      authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
+  return $ act authenticator
+
 -- | servant-client interface for OAuth 1.0a
 runOAuthenticated ::
   OAuth ->
@@ -148,11 +161,8 @@ runOAuthenticated ::
   ClientEnv ->
   IO (Either ClientError r)
 runOAuthenticated oa cred act env = do
-  nonce <- replicateM 10 $ randomRIO ('a', 'z')
-  ts <- getPOSIXTime
-  let sign = signRequest oa cred env nonce ts
-      authenticator = mkAuthenticatedRequest () (\_ r -> sign r)
-  runClientM (act authenticator) env
+  req <- liftIO $ authenticate oa cred env act
+  runClientM req env
 
 gatherPhotoInfo :: Text -> FlickrPhotoDigest -> ClientM Photo
 gatherPhotoInfo key fpd = do
@@ -169,6 +179,49 @@ gatherPhotoInfo key fpd = do
       (photo & getField @"location" & fmap extractLocation)
       (faves & getField @"photo" & getField @"total" & unWordFromString)
 
+getLatestPhotos ::
+  Credential ->
+  ClientEnv ->
+  UserId ->
+  CommaSeparatedList Text ->
+  FlickrContentType ->
+  FlickrPrivacyFilter ->
+  Int ->
+  IO (Either ClientError [FlickrPhotoDigest])
+getLatestPhotos accessToken env userId extras cType privacyFilter maxPhotos = do
+  let perPage = 500
+      fetchFromPage ::
+        Word ->
+        [FlickrPhotoDigest] ->
+        ClientM [FlickrPhotoDigest]
+      fetchFromPage page acc = do
+        req <-
+          liftIO $
+            authenticate flickrOAuth accessToken env $
+              peopleGetPhotos
+                (Just userId)
+                (Just extras)
+                (Just cType)
+                (Just privacyFilter)
+                (Just perPage)
+                (Just page)
+
+        latest <- req
+        let photos' = latest & photos
+            acc' = acc ++ (photos' & getField @"photo")
+        if ( -- We ran out of pages
+             ((photos' & getField @"page") == (photos' & getField @"pages"))
+               ||
+               -- If actual number of photos is larger than reported
+               (maxPhotos <= length acc')
+               -- This would be the last page we'd want to fetch,
+               -- assuming numbers reported are correct
+               || (fromIntegral maxPhotos <= (perPage * (photos' & getField @"page")))
+           )
+          then (return $ take maxPhotos acc')
+          else fetchFromPage (page + 1) acc'
+  runClientM (fetchFromPage 0 []) env
+
 main :: IO ()
 main = do
   mgr <- newTlsManager
@@ -177,7 +230,7 @@ main = do
       -- This is our own per-group posting limit
       photosPerGroup = 5
       -- How many latest photos to fetch
-      maxPhotoCount = 500
+      maxPhotoCount = 1000
 
   -- Map from group IDs to "how many more photos can we post to that
   -- group". Thus we can capture our own user-defined limits and
@@ -192,12 +245,14 @@ main = do
 
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-    Right latest <- liftIO $ runOAuthenticated flickrOAuth accessToken (peopleGetPhotos (Just me) (Just $ CSL ["views", "description", "media"]) (Just PhotosOnly) (Just Public) (Just maxPhotoCount) (Just 0)) env
+    Right latest <- liftIO $ getLatestPhotos accessToken env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
     -- Filter out videos as we don't want to post them to any groups
-    let photoDigests = latest & photos & getField @"photo" & filter ((== PhotoMedia) . media)
+    let photoDigests = latest & filter ((== PhotoMedia) . media)
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
-    photosWithInfo <- liftIO $ rights <$> mapConcurrently (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
+    photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
+    print $ length $ lefts photosWithInfo'
+    let photosWithInfo = rights photosWithInfo'
     logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 
     -- TODO Try to split out servant-specific IO with polysemy

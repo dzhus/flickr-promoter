@@ -15,11 +15,12 @@ dependencies:
   - base >= 4.7 && < 5
   - aeson
   - authenticate-oauth
-  - base64-bytestring
+  - base64
   - binary
   - bytestring
   - classy-prelude
   - containers
+  - envy
   - http-client
   - http-client-tls
   - http-media

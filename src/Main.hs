@@ -2,12 +2,15 @@ module Main where
 
 import ClassyPrelude hiding (any)
 import Control.Monad.Logger
+import Control.Monad.Fail
 import Data.Binary.Builder hiding (empty)
 import qualified Data.ByteString.Base64 as B64
+import qualified Data.Text.Encoding.Base64 as T64
 import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
+import System.Envy hiding (env)
 import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
@@ -20,6 +23,8 @@ import Servant.API hiding (uriQuery)
 import Servant.Client
 import Servant.Client.Core
 import System.Random
+import Text.Read
+import System.Exit
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
@@ -45,10 +50,6 @@ flickrOAuth apiSecret =
       oauthConsumerSecret = apiSecret,
       oauthCallback = Just "https://gist.github.com/dzhus/0bf2a8b1990c288315411ce69bca56df"
     }
-
--- Results from authorize URL redirect
-persistedAccessToken :: Maybe Credential
-persistedAccessToken = Just Credential {unCredential = [("fullname", "Dmitry Djouce"), ("oauth_token", "72157716045986163-78e9b05ad8b18b40"), ("oauth_token_secret", "04a88aaa5c872e0c"), ("user_nsid", "46721940@N00"), ("username", "Dmitry Djouce")]}
 
 -- | Request OAuth 1.0a authorisation with Flickr.
 auth :: Manager -> OAuth -> IO Credential
@@ -100,7 +101,7 @@ generateSignature ::
 generateSignature oa cred env req =
   case (oauthSignatureMethod oa, lookup "oauth_token_secret" $ unCredential cred) of
     (HMACSHA1, Just tokenSecret) ->
-      B64.encode $ toStrict $ bytestringDigest $ hmacSha1 (fromStrict key) (oauthBaseString env req)
+      B64.encodeBase64' $ toStrict $ bytestringDigest $ hmacSha1 (fromStrict key) (oauthBaseString env req)
       where
         key = BS.intercalate "&" $ map paramEncode [oauthConsumerSecret oa, tokenSecret]
     (_, Nothing) -> error "Can't sign a request without oauth_token_secret in credential"
@@ -217,17 +218,51 @@ getLatestPhotos authConfig accessToken env userId extras cType privacyFilter max
           else fetchFromPage (page + 1) acc'
   runClientM (fetchFromPage 0 []) env
 
+data Config = Config
+  { apiSecret :: Maybe ByteString
+  , accessToken :: Maybe PersistedCredential
+  }
+  deriving (Generic, Show)
+
+instance FromEnv Config where
+  fromEnv = gFromEnvCustom defOption { customPrefix = "FLICKR_PROMOTER" }
+
+newtype PersistedCredential = PersistedCredential Credential deriving (Read, Show)
+
+instance Var PersistedCredential where
+  fromVar t = case T64.decodeBase64 (pack t) of
+    Left _ -> fail "Could not parse PersistedCredential"
+    Right v -> Just (PersistedCredential $ Credential $ read $ unpack v)
+
 main :: IO ()
 main = do
-  mgr <- newTlsManager
-  let env = mkClientEnv mgr flickrApi
-      me = UserId "me"
+  appCfg <- decodeWithDefaults (Config Nothing Nothing)
+
+
+  case appCfg of
+    Config (Just secret) cred ->
+      let
+        authConfig = flickrOAuth secret
+      in do
+        mgr <- newTlsManager
+        case cred of
+          Nothing -> do
+            newToken <- liftIO $ auth mgr authConfig
+            putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow $ newToken)
+            exitWith (ExitFailure 1)
+          Just (PersistedCredential t) -> do
+            runStdoutLoggingT $ process authConfig mgr t
+    _ -> error "Populate FLICKR_PROMOTER_API_SECRET from https://www.flickr.com/services/apps/by/..."
+
+process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> m ()
+process authConfig mgr token = do
+  let me = UserId "me"
+      env = mkClientEnv mgr flickrApi
       -- This is our own per-group posting limit
       photosPerGroup = 5
       -- How many latest photos to fetch
       maxPhotoCount = 1000
-      apiSecret = "2f5d176193666a48"
-      authConfig = flickrOAuth apiSecret
+  -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
   -- Map from group IDs to "how many more photos can we post to that
   -- group". Thus we can capture our own user-defined limits and
@@ -235,71 +270,64 @@ main = do
   groupLimits <- newTVarIO (mapFromList [] :: Map GroupId Word)
   postedCounter <- newTVarIO (0 :: Word)
 
-  runStdoutLoggingT $ do
-    accessToken <- case persistedAccessToken of
-      Nothing -> liftIO $ auth mgr authConfig
-      Just t -> return t
+  Right latest <- liftIO $
+    getLatestPhotos authConfig token env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
+  -- Filter out videos as we don't want to post them to any groups
+  let photoDigests = latest & filter ((== PhotoMedia) . media)
+  logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
-    -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
+  photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
+  print $ length $ lefts photosWithInfo'
+  let photosWithInfo = rights photosWithInfo'
+  logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 
-    Right latest <- liftIO $
-      getLatestPhotos authConfig accessToken env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
-    -- Filter out videos as we don't want to post them to any groups
-    let photoDigests = latest & filter ((== PhotoMedia) . media)
-    logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
+  -- TODO Try to split out servant-specific IO with polysemy
 
-    photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
-    print $ length $ lefts photosWithInfo'
-    let photosWithInfo = rights photosWithInfo'
-    logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
+  forM_ (sortOn (Down . faves) photosWithInfo) $ \p -> do
+    let candidates = candidateGroups p
+    when (not $ null candidates) $ do
+      logDebugN $
+        format
+          (s % "/" % s % " should be in groups: " % s)
+          (getField @"title" p)
+          (unPhotoId $ getField @"id" p)
+          (intercalate ", " $ map tshow $ toList candidates)
+      forM_ (toList candidates) $
+        \c -> do
+          -- TODO This can still fail if we get throttled on two
+          -- concurrent requests to add to the same group
+          canPost <- atomically $ do
+            gl <- readTVar groupLimits
+            case lookup c gl of
+              Just r -> return (r > 0)
+              Nothing -> return True
+          when canPost $ do
+            resp <- liftIO $ runOAuthenticated authConfig token (poolsAdd (Just (p & getField @"id")) (Just c)) env
+            case resp of
+              Right (PoolsAddResponse Ok _) -> do
+                atomically $ modifyTVar' postedCounter (1 +)
+                -- Update how many more photos can we post to this group
+                atomically $
+                  modifyTVar' groupLimits $ \gl ->
+                    insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
+                logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
+              Right (PoolsAddResponse Fail (Just err)) -> do
+                logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow c) (tshow err)
+                atomically $ modifyTVar' groupLimits (insertMap c 0)
+              other ->
+                logErrorN $
+                  format
+                    ("Unknown error posting " % s % " to " % s % ": " % s)
+                    (tshow p)
+                    (tshow c)
+                    (tshow other)
 
-    -- TODO Try to split out servant-specific IO with polysemy
-
-    forM_ (sortOn (Down . faves) photosWithInfo) $ \p -> do
-      let candidates = candidateGroups p
-      when (not $ null candidates) $ do
-        logDebugN $
-          format
-            (s % "/" % s % " should be in groups: " % s)
-            (getField @"title" p)
-            (unPhotoId $ getField @"id" p)
-            (intercalate ", " $ map tshow $ toList candidates)
-        forM_ (toList candidates) $
-          \c -> do
-            -- TODO This can still fail if we get throttled on two
-            -- concurrent requests to add to the same group
-            canPost <- atomically $ do
-              gl <- readTVar groupLimits
-              case lookup c gl of
-                Just r -> return (r > 0)
-                Nothing -> return True
-            when canPost $ do
-              resp <- liftIO $ runOAuthenticated authConfig accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
-              case resp of
-                Right (PoolsAddResponse Ok _) -> do
-                  atomically $ modifyTVar' postedCounter (1 +)
-                  -- Update how many more photos can we post to this group
-                  atomically $
-                    modifyTVar' groupLimits $ \gl ->
-                      insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
-                  logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
-                Right (PoolsAddResponse Fail (Just err)) -> do
-                  logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow c) (tshow err)
-                  atomically $ modifyTVar' groupLimits (insertMap c 0)
-                other ->
-                  logErrorN $
-                    format
-                      ("Unknown error posting " % s % " to " % s % ": " % s)
-                      (tshow p)
-                      (tshow c)
-                      (tshow other)
-
-    readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")
-    readTVarIO groupLimits >>= \limits -> do
-      let depleted = filter (not . (> 0) . snd) (mapToList limits)
-      when (not $ null depleted) $
-        logInfoN $
-          format
-            ("Posting limits reached for " % d % " groups: " % s)
-            (length depleted)
-            (tshow (map fst depleted))
+  readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")
+  readTVarIO groupLimits >>= \limits -> do
+    let depleted = filter (not . (> 0) . snd) (mapToList limits)
+    when (not $ null depleted) $
+      logInfoN $
+        format
+          ("Posting limits reached for " % d % " groups: " % s)
+          (length depleted)
+          (tshow (map fst depleted))

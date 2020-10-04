@@ -235,7 +235,7 @@ main = do
   case appCfg of
     Config (Just key) (Just secret) cred ->
       let authConfig = flickrOAuth key secret
-      in do
+       in do
             mgr <- newTlsManager
             case cred of
               Nothing -> do

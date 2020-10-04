@@ -32,11 +32,8 @@ import Web.Authenticate.OAuth
 apiKey :: Text
 apiKey = "53eeb65b3ecfc822e4cdfa8440e058fd"
 
-apiSecret :: ByteString
-apiSecret = "2f5d176193666a48"
-
-flickrOAuth :: OAuth
-flickrOAuth =
+flickrOAuth :: ByteString -> OAuth
+flickrOAuth apiSecret =
   newOAuth
     { oauthServerName = "Flickr",
       -- URLs from https://www.flickr.com/services/api/auth.oauth.html
@@ -54,11 +51,11 @@ persistedAccessToken :: Maybe Credential
 persistedAccessToken = Just Credential {unCredential = [("fullname", "Dmitry Djouce"), ("oauth_token", "72157716045986163-78e9b05ad8b18b40"), ("oauth_token_secret", "04a88aaa5c872e0c"), ("user_nsid", "46721940@N00"), ("username", "Dmitry Djouce")]}
 
 -- | Request OAuth 1.0a authorisation with Flickr.
-auth :: Manager -> IO Credential
-auth mgr = do
-  tmpCred <- getTemporaryCredential flickrOAuth mgr
+auth :: Manager -> OAuth -> IO Credential
+auth mgr authConfig = do
+  tmpCred <- getTemporaryCredential authConfig mgr
 
-  let authorizationUrl = format (s % "&perms=write") $ fromString $ authorizeUrl flickrOAuth tmpCred
+  let authorizationUrl = format (s % "&perms=write") $ fromString $ authorizeUrl authConfig tmpCred
   putStrLn $
     format
       ( "To authorize flickr-promoter, open the following URL: "
@@ -70,7 +67,7 @@ auth mgr = do
   mkURI <$> getLine >>= \case
     Just authorizedUrl ->
       case authorizedUrl ^. uriQuery ^? queryParam [queryKey|oauth_verifier|] of
-        Just verifierParam -> getAccessToken flickrOAuth (injectVerifier (encodeUtf8 $ verifierParam ^. unRText) tmpCred) mgr
+        Just verifierParam -> getAccessToken authConfig (injectVerifier (encodeUtf8 $ verifierParam ^. unRText) tmpCred) mgr
         Nothing -> error "No oauth_verifier parameter found in the URL copied. Make sure you copy it correctly."
     Nothing -> error "Could not parse the URL copied. Make sure you copy it correctly."
 
@@ -180,6 +177,7 @@ gatherPhotoInfo key fpd = do
       (faves & getField @"photo" & getField @"total" & unWordFromString)
 
 getLatestPhotos ::
+  OAuth ->
   Credential ->
   ClientEnv ->
   UserId ->
@@ -188,16 +186,13 @@ getLatestPhotos ::
   FlickrPrivacyFilter ->
   Int ->
   IO (Either ClientError [FlickrPhotoDigest])
-getLatestPhotos accessToken env userId extras cType privacyFilter maxPhotos = do
-  let perPage = 500
-      fetchFromPage ::
-        Word ->
-        [FlickrPhotoDigest] ->
-        ClientM [FlickrPhotoDigest]
+getLatestPhotos authConfig accessToken env userId extras cType privacyFilter maxPhotos = do
+  let  -- as per https://www.flickr.com/services/api/flickr.people.getPhotos.html
+      perPage = 500
       fetchFromPage page acc = do
         req <-
           liftIO $
-            authenticate flickrOAuth accessToken env $
+            authenticate authConfig accessToken env $
               peopleGetPhotos
                 (Just userId)
                 (Just extras)
@@ -231,6 +226,8 @@ main = do
       photosPerGroup = 5
       -- How many latest photos to fetch
       maxPhotoCount = 1000
+      apiSecret = "2f5d176193666a48"
+      authConfig = flickrOAuth apiSecret
 
   -- Map from group IDs to "how many more photos can we post to that
   -- group". Thus we can capture our own user-defined limits and
@@ -240,12 +237,13 @@ main = do
 
   runStdoutLoggingT $ do
     accessToken <- case persistedAccessToken of
-      Nothing -> liftIO $ auth mgr
+      Nothing -> liftIO $ auth mgr authConfig
       Just t -> return t
 
     -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
 
-    Right latest <- liftIO $ getLatestPhotos accessToken env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
+    Right latest <- liftIO $
+      getLatestPhotos authConfig accessToken env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
     -- Filter out videos as we don't want to post them to any groups
     let photoDigests = latest & filter ((== PhotoMedia) . media)
     logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
@@ -276,7 +274,7 @@ main = do
                 Just r -> return (r > 0)
                 Nothing -> return True
             when canPost $ do
-              resp <- liftIO $ runOAuthenticated flickrOAuth accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
+              resp <- liftIO $ runOAuthenticated authConfig accessToken (poolsAdd (Just (p & getField @"id")) (Just c)) env
               case resp of
                 Right (PoolsAddResponse Ok _) -> do
                   atomically $ modifyTVar' postedCounter (1 +)

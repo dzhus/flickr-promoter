@@ -25,7 +25,7 @@ hasTag :: Tag -> Photo -> Bool
 hasTag tag p = tag `elem` (p & getField @"tags")
 
 moreFavesThan :: Word -> (Photo -> Bool)
-moreFavesThan threshold photo = (faves photo) >= threshold
+moreFavesThan threshold photo = faves photo >= threshold
 
 -- TODO add more England groups
 rules :: [Rule]
@@ -65,8 +65,8 @@ rules =
 candidateGroups :: Photo -> Set GroupId
 candidateGroups photo = setFromList $
   catMaybes $
-    (flip map) rules $
+    flip map rules $
       \(Rule (predicate, targetGroup)) ->
-        if predicate photo && targetGroup `notElem` (groups photo)
+        if predicate photo && targetGroup `notElem` groups photo
           then Just targetGroup
           else Nothing

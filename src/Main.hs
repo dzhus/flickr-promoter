@@ -1,16 +1,15 @@
 module Main where
 
 import ClassyPrelude hiding (any)
-import Control.Monad.Logger
 import Control.Monad.Fail
+import Control.Monad.Logger
 import Data.Binary.Builder hiding (empty)
 import qualified Data.ByteString.Base64 as B64
-import qualified Data.Text.Encoding.Base64 as T64
 import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
+import qualified Data.Text.Encoding.Base64 as T64
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import System.Envy hiding (env)
 import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
@@ -22,23 +21,18 @@ import Promoter.Types
 import Servant.API hiding (uriQuery)
 import Servant.Client
 import Servant.Client.Core
+import System.Envy hiding (env)
+import System.Exit
 import System.Random
 import Text.Read
-import System.Exit
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
 import Turtle.Format (d, format, s, (%))
 import Web.Authenticate.OAuth
 
--- TODO Is this superseded by
--- &oauth_consumer_key=653e7a6ecc1d528c516cc8f92cf98611 in API
--- requests? https://www.flickr.com/services/api/auth.oauth.html
-apiKey :: Text
-apiKey = "53eeb65b3ecfc822e4cdfa8440e058fd"
-
-flickrOAuth :: ByteString -> OAuth
-flickrOAuth apiSecret =
+flickrOAuth :: Text -> ByteString -> OAuth
+flickrOAuth apiKey apiSecret =
   newOAuth
     { oauthServerName = "Flickr",
       -- URLs from https://www.flickr.com/services/api/auth.oauth.html
@@ -188,7 +182,7 @@ getLatestPhotos ::
   Int ->
   IO (Either ClientError [FlickrPhotoDigest])
 getLatestPhotos authConfig accessToken env userId extras cType privacyFilter maxPhotos = do
-  let  -- as per https://www.flickr.com/services/api/flickr.people.getPhotos.html
+  let -- as per https://www.flickr.com/services/api/flickr.people.getPhotos.html
       perPage = 500
       fetchFromPage page acc = do
         req <-
@@ -219,40 +213,38 @@ getLatestPhotos authConfig accessToken env userId extras cType privacyFilter max
   runClientM (fetchFromPage 0 []) env
 
 data Config = Config
-  { apiSecret :: Maybe ByteString
-  , accessToken :: Maybe PersistedCredential
+  { apiKey :: Maybe Text,
+    apiSecret :: Maybe ByteString,
+    accessToken :: Maybe PersistedCredential
   }
   deriving (Generic, Show)
 
 instance FromEnv Config where
-  fromEnv = gFromEnvCustom defOption { customPrefix = "FLICKR_PROMOTER" }
+  fromEnv = gFromEnvCustom defOption {customPrefix = "FLICKR_PROMOTER"}
 
 newtype PersistedCredential = PersistedCredential Credential deriving (Read, Show)
 
 instance Var PersistedCredential where
   fromVar t = case T64.decodeBase64 (pack t) of
     Left _ -> fail "Could not parse PersistedCredential"
-    Right v -> Just (PersistedCredential $ Credential $ read $ unpack v)
+    Right v -> Just (PersistedCredential $ read $ unpack v)
 
 main :: IO ()
 main = do
-  appCfg <- decodeWithDefaults (Config Nothing Nothing)
-
-
+  appCfg <- decodeWithDefaults (Config Nothing Nothing Nothing)
   case appCfg of
-    Config (Just secret) cred ->
-      let
-        authConfig = flickrOAuth secret
+    Config (Just key) (Just secret) cred ->
+      let authConfig = flickrOAuth key secret
       in do
-        mgr <- newTlsManager
-        case cred of
-          Nothing -> do
-            newToken <- liftIO $ auth mgr authConfig
-            putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow $ newToken)
-            exitWith (ExitFailure 1)
-          Just (PersistedCredential t) -> do
-            runStdoutLoggingT $ process authConfig mgr t
-    _ -> error "Populate FLICKR_PROMOTER_API_SECRET from https://www.flickr.com/services/apps/by/..."
+            mgr <- newTlsManager
+            case cred of
+              Nothing -> do
+                newToken <- liftIO $ auth mgr authConfig
+                putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow $ newToken)
+                exitWith (ExitFailure 1)
+              Just (PersistedCredential t) -> do
+                runStdoutLoggingT $ process authConfig mgr t
+    _ -> error "Populate FLICKR_PROMOTER_API_KEY and FLICKR_PROMOTER_API_SECRET from https://www.flickr.com/services/apps/by/..."
 
 process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> m ()
 process authConfig mgr token = do
@@ -262,7 +254,8 @@ process authConfig mgr token = do
       photosPerGroup = 5
       -- How many latest photos to fetch
       maxPhotoCount = 1000
-  -- (print =<<) $ runOAuthenticated flickrOAuth accessToken testLogin env
+
+  (logInfoN . tshow =<<) $ liftIO $ runOAuthenticated authConfig token testLogin env
 
   -- Map from group IDs to "how many more photos can we post to that
   -- group". Thus we can capture our own user-defined limits and
@@ -270,14 +263,14 @@ process authConfig mgr token = do
   groupLimits <- newTVarIO (mapFromList [] :: Map GroupId Word)
   postedCounter <- newTVarIO (0 :: Word)
 
-  Right latest <- liftIO $
-    getLatestPhotos authConfig token env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
+  Right latest <-
+    liftIO $
+      getLatestPhotos authConfig token env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
   -- Filter out videos as we don't want to post them to any groups
   let photoDigests = latest & filter ((== PhotoMedia) . media)
   logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
-  photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo apiKey fpd) env) photoDigests
-  print $ length $ lefts photosWithInfo'
+  photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo (decodeUtf8 $ oauthConsumerKey authConfig) fpd) env) photoDigests
   let photosWithInfo = rights photosWithInfo'
   logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 

@@ -176,11 +176,13 @@ data Status = Ok | Fail deriving (Generic, Show)
 instance FromJSON Status where
   parseJSON = genericParseJSON defaultOptions {constructorTagModifier = camelTo2 '_'}
 
-data PoolResponseCode = GroupLimit | UnknownCode Scientific deriving (Show)
+data PoolResponseCode = GroupLimit | GroupNotFound | InappropriateContent | UnknownCode Scientific deriving (Show)
 
 instance FromJSON PoolResponseCode where
   parseJSON = withScientific "PoolResposeCode" $ \case
     5 -> pure GroupLimit
+    2 -> pure GroupNotFound
+    8 -> pure InappropriateContent
     o -> pure $ UnknownCode o
 
 data PoolsAddResponse = PoolsAddResponse

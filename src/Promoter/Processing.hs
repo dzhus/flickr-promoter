@@ -40,6 +40,8 @@ rules =
     moreFavesThan 1 .=> "416556@N22",
     moreFavesThan 1 .=> "76535076@N00", -- https://www.flickr.com/groups/flickraddicts/
     moreFavesThan 1 .=> "11252682@N00", -- https://www.flickr.com/groups/the_world_through_my_eyes/
+    moreFavesThan 1 .=> "347276@N23",
+    moreFavesThan 1 .=> "52240402017@N01",
     any .=> "2677807@N23", -- https://www.flickr.com/groups/amateurphotographer/
     any .=> "43501458@N00", -- https://www.flickr.com/groups/amateurs/
     any .=> "769299@N22", -- https://www.flickr.com/groups/769299@N22/
@@ -63,7 +65,8 @@ rules =
     hasTag "landscape" .=> "11611663@N00", -- https://www.flickr.com/groups/nature-and-photography/
     hasTag "landscape" .=> "13197975@N00", -- https://www.flickr.com/groups/13197975@N00/
     hasTag "landscape" .=> "535727@N21", -- https://www.flickr.com/groups/worldlandscapes/
-    hasTag "landscape" .=> "1003995@N21" -- https://www.flickr.com/groups/landscape-beauty/
+    hasTag "landscape" .=> "1003995@N21", -- https://www.flickr.com/groups/landscape-beauty/
+    hasTag "landscape" .=> "78249294@N00"
   ]
 
 -- | Which groups to post this photo to

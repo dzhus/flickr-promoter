@@ -253,7 +253,7 @@ process authConfig mgr token = do
       -- This is our own per-group posting limit
       photosPerGroup = 5
       -- How many latest photos to fetch
-      maxPhotoCount = 1000
+      maxPhotoCount = 2000
 
   (logInfoN . tshow =<<) $ liftIO $ runOAuthenticated authConfig token testLogin env
 

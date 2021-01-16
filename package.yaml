@@ -28,7 +28,6 @@ dependencies:
   - microlens
   - monad-logger
   - modern-uri
-  - polysemy
   - random
   - scientific
   - servant

@@ -304,7 +304,7 @@ process authConfig mgr token = do
                 -- Update how many more photos can we post to this group
                 atomically $
                   modifyTVar' groupLimits $ \gl ->
-                    insertMap c ((fromMaybe photosPerGroup $ lookup c gl) - 1) gl
+                    insertMap c (fromMaybe photosPerGroup (lookup c gl) - 1) gl
                 logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
               Right (PoolsAddResponse Fail (Just err)) -> do
                 logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow c) (tshow err)

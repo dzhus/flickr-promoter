@@ -146,12 +146,12 @@ newtype CommaSeparatedList a = CSL [a]
 instance ToHttpApiData a => ToHttpApiData (CommaSeparatedList a) where
   toQueryParam (CSL params) = intercalate "," $ map toQueryParam params
 
-data FlickrPool = FlickrPool
+newtype FlickrPool = FlickrPool
   { id :: GroupId
   }
   deriving (Generic, FromJSON, Show)
 
-data GetAllContextsResponse = GetAllContextsResponse
+newtype GetAllContextsResponse = GetAllContextsResponse
   { pool :: Maybe [FlickrPool]
   }
   deriving (Generic, FromJSON, Show)

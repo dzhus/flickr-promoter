@@ -39,19 +39,19 @@ instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
   hoistClientMonad pm _ f cl =
     hoistClientMonad pm (Proxy :: Proxy api) f cl
 
-data FlickrContent = FlickrContent
+newtype FlickrContent = FlickrContent
   {_content :: Text}
   deriving (Generic, FromJSON, Show)
 
-data FlickrUser = FlickrUser
+newtype FlickrUser = FlickrUser
   {username :: FlickrContent}
   deriving (Generic, FromJSON, Show)
 
-data LoginResponse = LoginResponse
+newtype LoginResponse = LoginResponse
   {user :: FlickrUser}
   deriving (Generic, FromJSON, Show)
 
-data PhotoResponse = PhotoResponse
+newtype PhotoResponse = PhotoResponse
   {photo :: FlickrPhoto}
   deriving (Generic, FromJSON, Show)
 
@@ -80,14 +80,14 @@ data FlickrPhoto = FlickrPhoto
   }
   deriving (Generic, FromJSON, Show)
 
-data FlickrTags = FlickrTags
+newtype FlickrTags = FlickrTags
   {tag :: [FlickrContent]}
   deriving (Generic, FromJSON, Show)
 
 extractTags :: FlickrTags -> Set Tag
 extractTags (FlickrTags tags) = setFromList $ map (Tag . _content) tags
 
-data GetPhotosResponse = GetPhotosResponse
+newtype GetPhotosResponse = GetPhotosResponse
   { photos :: FlickrPhotos
   }
   deriving (Generic, FromJSON, Show)
@@ -135,7 +135,7 @@ data FlickrPhotos = FlickrPhotos
   }
   deriving (Generic, FromJSON, Show)
 
-data FlickrPhotoFavorites = FlickrPhotoFavorites
+newtype FlickrPhotoFavorites = FlickrPhotoFavorites
   { total :: WordFromString
   }
   deriving (Generic, FromJSON, Show)

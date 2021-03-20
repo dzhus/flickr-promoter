@@ -1,3 +1,5 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module Main where
 
 import ClassyPrelude hiding (any)

@@ -61,12 +61,13 @@ auth mgr authConfig = do
       )
       authorizationUrl
 
-  mkURI <$> getLine >>= \case
+  res <- getLine >>= \case
     Just authorizedUrl ->
       case authorizedUrl ^. uriQuery ^? queryParam [queryKey|oauth_verifier|] of
         Just verifierParam -> getAccessToken authConfig (injectVerifier (encodeUtf8 $ verifierParam ^. unRText) tmpCred) mgr
         Nothing -> error "No oauth_verifier parameter found in the URL copied. Make sure you copy it correctly."
     Nothing -> error "Could not parse the URL copied. Make sure you copy it correctly."
+  return $ mkURI res
 
 -- | Generate OAuth 1.0a signature base string as per
 -- <https://oauth.net/core/1.0a/#anchor13>.

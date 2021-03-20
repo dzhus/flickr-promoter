@@ -41,19 +41,23 @@ instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
 
 newtype FlickrContent = FlickrContent
   {_content :: Text}
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 newtype FlickrUser = FlickrUser
   {username :: FlickrContent}
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 newtype LoginResponse = LoginResponse
   {user :: FlickrUser}
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 newtype PhotoResponse = PhotoResponse
   {photo :: FlickrPhoto}
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 data FlickrLocation = FlickrLocation
   { country :: FlickrContent,
@@ -82,7 +86,8 @@ data FlickrPhoto = FlickrPhoto
 
 newtype FlickrTags = FlickrTags
   {tag :: [FlickrContent]}
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 extractTags :: FlickrTags -> Set Tag
 extractTags (FlickrTags tags) = setFromList $ map (Tag . _content) tags
@@ -90,7 +95,8 @@ extractTags (FlickrTags tags) = setFromList $ map (Tag . _content) tags
 newtype GetPhotosResponse = GetPhotosResponse
   { photos :: FlickrPhotos
   }
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 data Media = PhotoMedia | VideoMedia deriving (Generic, Eq, Show)
 
@@ -138,7 +144,8 @@ data FlickrPhotos = FlickrPhotos
 newtype FlickrPhotoFavorites = FlickrPhotoFavorites
   { total :: WordFromString
   }
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 newtype CommaSeparatedList a = CSL [a]
   deriving (Show, Generic, Foldable, Functor)
@@ -149,12 +156,14 @@ instance ToHttpApiData a => ToHttpApiData (CommaSeparatedList a) where
 newtype FlickrPool = FlickrPool
   { id :: GroupId
   }
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 newtype GetAllContextsResponse = GetAllContextsResponse
   { pool :: Maybe [FlickrPool]
   }
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 extractGroups :: GetAllContextsResponse -> Set GroupId
 extractGroups (GetAllContextsResponse Nothing) = mempty
@@ -189,12 +198,14 @@ data PoolsAddResponse = PoolsAddResponse
   { stat :: Status,
     code :: Maybe PoolResponseCode
   }
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 newtype PhotoFavoritesResponse = PhotoFavoritesResponse
   { photo :: FlickrPhotoFavorites
   }
-  deriving (Generic, FromJSON, Show)
+  deriving (Generic, Show)
+  deriving anyclass FromJSON
 
 -- TODO Client functions must have tagged arguments automatically, not
 -- blind `ty` from `QueryParam lab ty`

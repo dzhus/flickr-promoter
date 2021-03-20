@@ -201,16 +201,15 @@ getLatestPhotos authConfig accessToken env userId extras cType privacyFilter max
         latest <- req
         let photos' = latest & photos
             acc' = acc ++ (photos' & getField @"photo")
-        if ( -- We ran out of pages
-             ((photos' & getField @"page") == (photos' & getField @"pages"))
-               ||
-               -- If actual number of photos is larger than reported
-               (maxPhotos <= length acc')
-               -- This would be the last page we'd want to fetch,
-               -- assuming numbers reported are correct
-               || (fromIntegral maxPhotos <= (perPage * (photos' & getField @"page")))
-           )
-          then (return $ take maxPhotos acc')
+        if  -- We ran out of pages
+            ((photos' & getField @"page") == (photos' & getField @"pages"))
+            ||
+            -- If actual number of photos is larger than reported
+            (maxPhotos <= length acc')
+            -- This would be the last page we'd want to fetch,
+            -- assuming numbers reported are correct
+            || (fromIntegral maxPhotos <= (perPage * (photos' & getField @"page")))
+          then return $ take maxPhotos acc'
           else fetchFromPage (page + 1) acc'
   runClientM (fetchFromPage 0 []) env
 
@@ -242,7 +241,7 @@ main = do
             case cred of
               Nothing -> do
                 newToken <- liftIO $ auth mgr authConfig
-                putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow $ newToken)
+                putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow newToken)
                 exitWith (ExitFailure 1)
               Just (PersistedCredential t) -> do
                 runStdoutLoggingT $ process authConfig mgr t
@@ -280,7 +279,7 @@ process authConfig mgr token = do
 
   forM_ (sortOn (Down . faves) photosWithInfo) $ \p -> do
     let candidates = candidateGroups p
-    when (not $ null candidates) $ do
+    unless (null candidates) $ do
       logDebugN $
         format
           (s % "/" % s % " should be in groups: " % s)
@@ -319,8 +318,8 @@ process authConfig mgr token = do
 
   readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")
   readTVarIO groupLimits >>= \limits -> do
-    let depleted = filter (not . (> 0) . snd) (mapToList limits)
-    when (not $ null depleted) $
+    let depleted = filter ((<= 0) . snd) (mapToList limits)
+    unless (null depleted) $
       logInfoN $
         format
           ("Posting limits reached for " % d % " groups: " % s)

@@ -70,7 +70,7 @@ extractLocation loc =
       ", "
       [ loc & country & _content,
         loc & region & _content,
-        fromMaybe "" (loc & county & fmap _content),
+        maybe "" _content (loc & county),
         loc & locality & _content
       ]
 

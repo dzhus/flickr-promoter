@@ -14,8 +14,9 @@ jobs:
     steps:
       - name: Setup Stack
         uses: haskell/actions/setup@v1
-        enable-stack: true
-        stack-version: 'latest'
+        with:
+          enable-stack: true
+          stack-version: 'latest'
 
       - name: Clone project
         uses: actions/checkout@v2

@@ -191,7 +191,7 @@ data PoolsAddResponse = PoolsAddResponse
   }
   deriving (Generic, FromJSON, Show)
 
-data PhotoFavoritesResponse = PhotoFavoritesResponse
+newtype PhotoFavoritesResponse = PhotoFavoritesResponse
   { photo :: FlickrPhotoFavorites
   }
   deriving (Generic, FromJSON, Show)

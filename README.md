@@ -27,3 +27,11 @@ callback URL.
 ### Normal mode
 
 Run `flickr-promoter` with both env variables set.
+
+### AWS deployment
+
+- `stack build --ghc-options='-optl-static'` under Amazon Linux
+  (docker run amazonlinux)
+
+- `zip function.zip bootstrap .stack-work../../bin/flickr-promoter` to
+  obtain a Lambda function package with the bootstrap function

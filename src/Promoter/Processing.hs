@@ -64,10 +64,10 @@ rules =
     hasTag "landscape" .=> "23854677@N00", -- https://www.flickr.com/groups/landcape/
     hasTag "landscape" .=> "81431815@N00", -- https://www.flickr.com/groups/natur/
     hasTag "landscape" .=> "80148101@N00", -- https://www.flickr.com/groups/natureandlandscapes/
-    hasTag "landscape" .=> "11611663@N00", -- https://www.flickr.com/groups/nature-and-photography/
+    -- hasTag "landscape" .=> "11611663@N00", -- https://www.flickr.com/groups/nature-and-photography/
     hasTag "landscape" .=> "535727@N21", -- https://www.flickr.com/groups/worldlandscapes/
-    hasTag "landscape" .=> "1003995@N21", -- https://www.flickr.com/groups/landscape-beauty/
-    hasTag "landscape" .=> "78249294@N00"
+    hasTag "landscape" .=> "1003995@N21" -- https://www.flickr.com/groups/landscape-beauty/
+    -- hasTag "landscape" .=> "78249294@N00"
   ]
 
 -- | Which groups to post this photo to

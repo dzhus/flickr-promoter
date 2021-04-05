@@ -26,6 +26,7 @@ import Servant.Client.Core
 import System.Envy hiding (env)
 import System.Exit
 import System.Random
+import System.Random.Shuffle
 import Text.Read
 import Text.URI (mkURI)
 import Text.URI.Lens
@@ -274,12 +275,12 @@ process authConfig mgr token = do
   logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
   photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo (decodeUtf8 $ oauthConsumerKey authConfig) fpd) env) photoDigests
-  let photosWithInfo = rights photosWithInfo'
+  photosWithInfo <- liftIO $ shuffleM $ rights photosWithInfo'
   logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 
   -- TODO Try to split out servant-specific IO with polysemy
 
-  forM_ (sortOn (Down . faves) photosWithInfo) $ \p -> do
+  forM_ photosWithInfo $ \p -> do
     let candidates = candidateGroups p
     unless (null candidates) $ do
       logDebugN $

@@ -1,5 +1,4 @@
 FROM lambci/lambda:build-provided
 
-RUN curl -sSL https://download.fpcomplete.com/centos/7/fpco.repo | tee /etc/yum.repos.d/fpco.repo
-RUN yum install stack
+RUN curl -sSL https://get.haskellstack.org/ | sh
 RUN stack build

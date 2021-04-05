@@ -1,4 +1,4 @@
 FROM lambci/lambda:build-provided
 
-RUN yum install haskell-stack
+RUN yum install stack
 RUN stack build

@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
 module Promoter.FlickrAPI where
 
 import ClassyPrelude hiding (any)

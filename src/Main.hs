@@ -230,6 +230,7 @@ instance Var PersistedCredential where
   fromVar t = case T64.decodeBase64 (pack t) of
     Left _ -> fail "Could not parse PersistedCredential"
     Right v -> Just (PersistedCredential $ read $ unpack v)
+  toVar (PersistedCredential t) = unpack $ T64.encodeBase64 $ tshow t
 
 main :: IO ()
 main = do

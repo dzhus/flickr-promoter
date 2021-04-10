@@ -34,4 +34,4 @@ jobs:
       - name: Build and run tests
         run: 'stack build --fast --no-terminal --stack-yaml=${{ matrix.stack_yaml }} --pedantic --haddock --no-haddock-deps --test --bench --no-run-benchmarks'
       - name: Build statically
-        run: "stack clean && stack build --ghc-options='-optl-static' --no-executable-stripping"
+        run: "stack clean && stack build --ghc-options='-optl-static' --no-executable-stripping --no-library-stripping"

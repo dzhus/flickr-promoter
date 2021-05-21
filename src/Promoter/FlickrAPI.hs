@@ -138,7 +138,7 @@ data FlickrPhotos = FlickrPhotos
     page :: Word,
     pages :: Word,
     perpage :: Word,
-    total :: WordFromString
+    total :: Word
   }
   deriving (Generic, FromJSON, Show)
 

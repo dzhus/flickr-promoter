@@ -24,8 +24,8 @@ instance (KnownSymbol method, HasClient m api) => HasClient m (FlickrMethod meth
     where
       req' = appendToQueryString "method" (Just (fromString $ symbolVal (Proxy :: Proxy method))) req
 
-  hoistClientMonad pm _ f cl =
-    hoistClientMonad pm (Proxy :: Proxy api) f cl
+  hoistClientMonad pm _ =
+    hoistClientMonad pm (Proxy :: Proxy api)
 
 data FlickrResponseFormat = JsonFormat
 
@@ -37,8 +37,8 @@ instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
       . appendToQueryString "nojsoncallback" (Just "1")
       . appendToQueryString "format" (Just "json")
 
-  hoistClientMonad pm _ f cl =
-    hoistClientMonad pm (Proxy :: Proxy api) f cl
+  hoistClientMonad pm _ =
+    hoistClientMonad pm (Proxy :: Proxy api)
 
 newtype FlickrContent = FlickrContent
   {_content :: Text}

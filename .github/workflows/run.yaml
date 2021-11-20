@@ -27,6 +27,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.stack_yaml }}-
             ${{ runner.os }}-
+      - name: Build
+        run:
+          stack build --fast
       - name: Run
         run: >-
           FLICKR_PROMOTER_ACCESS_TOKEN=${{secrets.FLICKR_PROMOTER_ACCESS_TOKEN}}

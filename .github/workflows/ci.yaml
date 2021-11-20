@@ -33,13 +33,3 @@ jobs:
         run: 'curl -sL https://raw.github.com/ndmitchell/hlint/master/misc/travis.sh | sh -s .'
       - name: Build and run tests
         run: 'stack build --fast --no-terminal --stack-yaml=${{ matrix.stack_yaml }} --pedantic --haddock --no-haddock-deps --test --bench --no-run-benchmarks'
-      -
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      -
-        name: Build image
-        uses: docker/build-push-action@v2
-        with:
-          context: docker/
-          push: false
-          tags: flickr-promoter:latest

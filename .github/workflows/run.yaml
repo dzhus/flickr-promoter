@@ -1,4 +1,4 @@
-name: Build & test
+name: Daily run
 on:
   schedule:
     - cron: '45 11 * * *'

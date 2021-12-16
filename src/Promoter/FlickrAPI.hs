@@ -74,7 +74,7 @@ extractLocation loc =
   mapMaybe (\acc -> acc loc) &
   map _content &
   filter (/= "") &
-  intercalate "," &
+  intercalate ", " &
   Location
 
 data FlickrPhoto = FlickrPhoto

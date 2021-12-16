@@ -61,23 +61,21 @@ newtype PhotoResponse = PhotoResponse
   deriving anyclass FromJSON
 
 data FlickrLocation = FlickrLocation
-  { country :: FlickrContent,
-    region :: FlickrContent,
+  { country :: Maybe FlickrContent,
+    region :: Maybe FlickrContent,
     county :: Maybe FlickrContent,
-    locality :: FlickrContent
+    locality :: Maybe FlickrContent
   }
   deriving (Generic, FromJSON, Show)
 
 extractLocation :: FlickrLocation -> Location
 extractLocation loc =
-  Location $
-    intercalate
-      ", "
-      [ loc & country & _content,
-        loc & region & _content,
-        maybe "" _content (loc & county),
-        loc & locality & _content
-      ]
+  [country, region, county, locality] &
+  mapMaybe (\acc -> acc loc) &
+  map _content &
+  filter (/= "") &
+  intercalate "," &
+  Location
 
 data FlickrPhoto = FlickrPhoto
   { location :: Maybe FlickrLocation,

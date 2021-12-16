@@ -275,6 +275,12 @@ process authConfig mgr token = do
   logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
   photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo (decodeUtf8 $ oauthConsumerKey authConfig) fpd) env) photoDigests
+
+  let unparsed = lefts photosWithInfo'
+  unless (null unparsed) $ do
+    forM_ unparsed $ \up -> logErrorN (tshow up)
+    liftIO $ exitWith (ExitFailure 1)
+
   photosWithInfo <- liftIO $ shuffleM $ rights photosWithInfo'
   logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 

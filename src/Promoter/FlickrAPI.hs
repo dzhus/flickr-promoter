@@ -143,7 +143,7 @@ data FlickrPhotos = FlickrPhotos
   deriving (Generic, FromJSON, Show)
 
 newtype FlickrPhotoFavorites = FlickrPhotoFavorites
-  { total :: WordFromString
+  { total :: Word
   }
   deriving (Generic, Show)
   deriving anyclass FromJSON

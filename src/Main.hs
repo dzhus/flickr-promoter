@@ -173,7 +173,7 @@ gatherPhotoInfo key fpd = do
       (photo & getField @"tags" & extractTags)
       (extractGroups contexts)
       (photo & getField @"location" & fmap extractLocation)
-      (faves & getField @"photo" & getField @"total" & unWordFromString)
+      (faves & getField @"photo" & getField @"total")
 
 getLatestPhotos ::
   OAuth ->

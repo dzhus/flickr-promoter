@@ -110,7 +110,7 @@ signRequest ::
   Credential ->
   ClientEnv ->
   -- | @oauth_nonce@
-  Text ->
+  ByteString ->
   -- | @oauth_timestamp@
   POSIXTime ->
   Request ->
@@ -118,17 +118,17 @@ signRequest ::
 signRequest oa cred env nonce ts req =
   case lookup "oauth_token" $ unCredential cred of
     Just oauth_token ->
-      req' & add "oauth_signature" (decodeUtf8 $ generateSignature oa cred env req')
+      req' & add "oauth_signature" (generateSignature oa cred env req')
       where
         -- https://oauth.net/core/1.0a/#anchor12
         add f v = appendToQueryString f (Just v)
         req' =
           req
-            & add "oauth_consumer_key" (decodeUtf8 $ oauthConsumerKey oa)
+            & add "oauth_consumer_key" (oauthConsumerKey oa)
             & add "oauth_nonce" nonce
             & add "oauth_signature_method" "HMAC-SHA1"
-            & add "oauth_timestamp" (tshow (round (nominalDiffTimeToSeconds ts) :: Integer))
-            & add "oauth_token" (decodeUtf8 oauth_token)
+            & add "oauth_timestamp" (encodeUtf8 $ tshow (round (nominalDiffTimeToSeconds ts) :: Integer))
+            & add "oauth_token" oauth_token
             & add "oauth_version" "1.0"
     Nothing -> error "Can't sign a request without oauth_token in credential"
 
@@ -143,7 +143,7 @@ authenticate ::
   (AuthenticatedRequest (AuthProtect "oauth") -> r) ->
   IO r
 authenticate oa cred env act = do
-  nonce <- replicateM 10 $ randomRIO ('a', 'z')
+  nonce <- encodeUtf8 <$> replicateM 10 (randomRIO ('a', 'z'))
   ts <- getPOSIXTime
   let sign = signRequest oa cred env nonce ts
       authenticator = mkAuthenticatedRequest () (\_ r -> sign r)

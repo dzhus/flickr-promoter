@@ -12,16 +12,16 @@ jobs:
         stack_yaml: ['stack.yaml']
     steps:
       - name: Setup Stack
-        uses: haskell/actions/setup@v1
+        uses: haskell/actions/setup@v2
         with:
           enable-stack: true
           stack-version: 'latest'
 
       - name: Clone project
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Cache dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: |
             ~/.stack
@@ -30,7 +30,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.stack_yaml }}-
             ${{ runner.os }}-
-      - name: HLint
-        run: 'curl -sL https://raw.github.com/ndmitchell/hlint/master/misc/travis.sh | sh -s .'
+
+      - name: 'Set up HLint'
+        uses: haskell/actions/hlint-setup@v2
+
+      - name: 'Run HLint'
+        uses: haskell/actions/hlint-run@v2
+        with:
+          path: src/
+          fail-on: warning
+
       - name: Build and run tests
         run: 'stack build --fast --no-terminal --stack-yaml=${{ matrix.stack_yaml }} --pedantic --haddock --no-haddock-deps --test --bench --no-run-benchmarks'

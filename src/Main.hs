@@ -9,10 +9,10 @@ import Data.Binary.Builder hiding (empty)
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
+import Data.Monoid
 import qualified Data.Text.Encoding.Base64 as T64
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import Data.Monoid
 import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
@@ -204,14 +204,14 @@ getLatestPhotos authConfig accessToken env userId extras cType privacyFilter max
         latest <- req
         let photos' = latest & photos
             acc' = acc ++ (photos' & getField @"photo")
-        if  -- We ran out of pages
-            ((photos' & getField @"page") == (photos' & getField @"pages"))
-            ||
-            -- If actual number of photos is larger than reported
-            (maxPhotos <= length acc')
-            -- This would be the last page we'd want to fetch,
-            -- assuming numbers reported are correct
-            || (fromIntegral maxPhotos <= (perPage * (photos' & getField @"page")))
+        if -- We ran out of pages
+        ((photos' & getField @"page") == (photos' & getField @"pages"))
+          ||
+          -- If actual number of photos is larger than reported
+          (maxPhotos <= length acc')
+          -- This would be the last page we'd want to fetch,
+          -- assuming numbers reported are correct
+          || (fromIntegral maxPhotos <= (perPage * (photos' & getField @"page")))
           then return $ take maxPhotos acc'
           else fetchFromPage (page + 1) acc'
   runClientM (fetchFromPage 0 []) env
@@ -252,38 +252,39 @@ main = do
     _ -> error "Populate FLICKR_PROMOTER_API_KEY and FLICKR_PROMOTER_API_SECRET from https://www.flickr.com/services/apps/by/..."
 
 data API = API
-  { authConfig :: OAuth
-  , token :: Credential
-  , env :: ClientEnv }
+  { authConfig :: OAuth,
+    token :: Credential,
+    env :: ClientEnv
+  }
 
-  -- | This is our own per-group posting limit
+-- \| This is our own per-group posting limit
 photosPerGroup :: Word
 photosPerGroup = 5
 
-data GroupInfo = GroupInfo { left :: Word, posted :: Word }
+data GroupInfo = GroupInfo {left :: Word, posted :: Word}
 
 startedPosting :: GroupInfo
 startedPosting = GroupInfo (photosPerGroup - 1) photosPerGroup
 
 onePosted :: GroupInfo -> GroupInfo
-onePosted GroupInfo{..} = GroupInfo (left - 1) (posted + 1)
+onePosted GroupInfo {..} = GroupInfo (left - 1) (posted + 1)
 
 neverPosted :: GroupInfo
 neverPosted = GroupInfo 0 0
 
 noneLeft :: GroupInfo -> GroupInfo
-noneLeft GroupInfo{..} = GroupInfo 0 posted
+noneLeft GroupInfo {..} = GroupInfo 0 posted
 
 type GroupLimits = Map GroupId GroupInfo
 
-postToGroup
-  :: (MonadFail m, MonadLoggerIO m)
-  => API
-  -> Photo
-  -> GroupLimits
-  -> GroupId
-  -> m GroupLimits
-postToGroup API{..} p groupLimits targetGroup = do
+postToGroup ::
+  (MonadFail m, MonadLoggerIO m) =>
+  API ->
+  Photo ->
+  GroupLimits ->
+  GroupId ->
+  m GroupLimits
+postToGroup API {..} p groupLimits targetGroup = do
   let addRequest = poolsAdd (Just (p & getField @"id")) (Just targetGroup)
       updateLimits addGroupLimit changeExistingGroup =
         return $ alterMap (maybe (Just addGroupLimit) (Just . changeExistingGroup)) targetGroup groupLimits
@@ -298,34 +299,29 @@ postToGroup API{..} p groupLimits targetGroup = do
     other -> do
       logErrorN $
         format
-        ("Unknown error posting " % s % " to " % s % ": " % s)
-        (tshow p)
-        (tshow targetGroup)
-        (tshow other)
+          ("Unknown error posting " % s % " to " % s % ": " % s)
+          (tshow p)
+          (tshow targetGroup)
+          (tshow other)
       return groupLimits
 
-processPhoto
-  :: (MonadFail m, MonadLoggerIO m)
-  => API
-  -> GroupLimits
-  -> Photo
-  -> m GroupLimits
+processPhoto ::
+  (MonadFail m, MonadLoggerIO m) =>
+  API ->
+  GroupLimits ->
+  Photo ->
+  m GroupLimits
 processPhoto api groupLimits photo =
   case matchingGroups photo of
     [] -> return groupLimits
     groups -> do
       logDebugN $
         format
-        (s % "/" % s % " should be in groups: " % s)
-        (getField @"title" photo)
-        (unPhotoId $ getField @"id" photo)
-        (intercalate ", " $ map tshow $ toList groups)
+          (s % "/" % s % " should be in groups: " % s)
+          (getField @"title" photo)
+          (unPhotoId $ getField @"id" photo)
+          (intercalate ", " $ map tshow $ toList groups)
       foldM (postToGroup api photo) groupLimits (toList groups)
-
-foldMWith
-  :: (MonoFoldable mono, Monad m)
-  => a -> mono -> (a -> Element mono -> m a) -> m a
-foldMWith acc coll f = foldM f acc coll
 
 process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> m ()
 process authConfig mgr token = do
@@ -361,15 +357,16 @@ process authConfig mgr token = do
 
   finalGroupLimits <- foldM (processPhoto api) groupLimits photosWithInfo
   let totalPosted = getSum $ foldMap (Sum . posted) finalGroupLimits
-      depleted = finalGroupLimits &
-                 filterMap ((== 0) . left) &
-                 keys
+      depleted =
+        finalGroupLimits
+          & filterMap ((== 0) . left)
+          & keys
 
   logInfoN $ format ("Added " % d % " new photos to groups") totalPosted
 
   unless (null depleted) $
     logInfoN $
-    format
-    ("Posting limits reached for " % d % " groups: " % s)
-    (length depleted)
-    (tshow depleted)
+      format
+        ("Posting limits reached for " % d % " groups: " % s)
+        (length depleted)
+        (tshow depleted)

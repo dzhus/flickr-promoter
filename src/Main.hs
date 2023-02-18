@@ -283,21 +283,24 @@ postToGroup
   -> GroupLimits
   -> GroupId
   -> m GroupLimits
-postToGroup API{..} p groupLimits group = do
-  resp <- liftIO $ runOAuthenticated authConfig token (poolsAdd (Just (p & getField @"id")) (Just group)) env
+postToGroup API{..} p groupLimits targetGroup = do
+  let addRequest = poolsAdd (Just (p & getField @"id")) (Just targetGroup)
+      updateLimits addGroupLimit changeExistingGroup =
+        return $ alterMap (maybe (Just addGroupLimit) (Just . changeExistingGroup)) targetGroup groupLimits
+  resp <- liftIO $ runOAuthenticated authConfig token addRequest env
   case resp of
     Right (PoolsAddResponse Ok _) -> do
-      logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow group)
-      return $ alterMap (maybe (Just startedPosting) (Just . onePosted)) group groupLimits
+      logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow targetGroup)
+      updateLimits startedPosting onePosted
     Right (PoolsAddResponse Fail (Just err)) -> do
-      logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow group) (tshow err)
-      return $ alterMap (maybe (Just neverPosted) (Just . noneLeft)) group groupLimits
+      logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow targetGroup) (tshow err)
+      updateLimits neverPosted noneLeft
     other -> do
       logErrorN $
         format
         ("Unknown error posting " % s % " to " % s % ": " % s)
         (tshow p)
-        (tshow group)
+        (tshow targetGroup)
         (tshow other)
       return groupLimits
 

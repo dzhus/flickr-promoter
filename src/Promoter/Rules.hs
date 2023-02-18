@@ -1,9 +1,10 @@
-module Promoter.Processing where
+module Promoter.Rules where
 
 import ClassyPrelude hiding (any)
 import GHC.Records
 import Lens.Micro
 import Promoter.Types
+import Data.List (nub)
 
 newtype Rule = Rule (Photo -> Bool, GroupId)
 
@@ -84,8 +85,8 @@ rules =
   ]
 
 -- | Which groups to post this photo to
-candidateGroups :: Photo -> Set GroupId
-candidateGroups photo = setFromList $
+matchingGroups :: Photo -> [GroupId]
+matchingGroups photo = nub $
   catMaybes $
     flip map rules $
       \(Rule (predicate, targetGroup)) ->

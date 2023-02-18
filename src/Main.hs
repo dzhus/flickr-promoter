@@ -12,13 +12,14 @@ import Data.Digest.Pure.SHA
 import qualified Data.Text.Encoding.Base64 as T64
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
+import Data.Monoid
 import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
 import Network.HTTP.Types.URI
 import Promoter.FlickrAPI
-import Promoter.Processing
+import Promoter.Rules
 import Promoter.Types
 import Servant.API hiding (uriQuery)
 import Servant.Client
@@ -250,12 +251,83 @@ main = do
                 runStdoutLoggingT $ process authConfig mgr t
     _ -> error "Populate FLICKR_PROMOTER_API_KEY and FLICKR_PROMOTER_API_SECRET from https://www.flickr.com/services/apps/by/..."
 
+data API = API
+  { authConfig :: OAuth
+  , token :: Credential
+  , env :: ClientEnv }
+
+  -- | This is our own per-group posting limit
+photosPerGroup :: Word
+photosPerGroup = 5
+
+data GroupInfo = GroupInfo { left :: Word, posted :: Word }
+
+startedPosting :: GroupInfo
+startedPosting = GroupInfo (photosPerGroup - 1) photosPerGroup
+
+onePosted :: GroupInfo -> GroupInfo
+onePosted GroupInfo{..} = GroupInfo (left - 1) (posted + 1)
+
+neverPosted :: GroupInfo
+neverPosted = GroupInfo 0 0
+
+noneLeft :: GroupInfo -> GroupInfo
+noneLeft GroupInfo{..} = GroupInfo 0 posted
+
+type GroupLimits = Map GroupId GroupInfo
+
+postToGroup
+  :: (MonadFail m, MonadLoggerIO m)
+  => API
+  -> Photo
+  -> GroupLimits
+  -> GroupId
+  -> m GroupLimits
+postToGroup API{..} p groupLimits group = do
+  resp <- liftIO $ runOAuthenticated authConfig token (poolsAdd (Just (p & getField @"id")) (Just group)) env
+  case resp of
+    Right (PoolsAddResponse Ok _) -> do
+      logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow group)
+      return $ alterMap (maybe (Just startedPosting) (Just . onePosted)) group groupLimits
+    Right (PoolsAddResponse Fail (Just err)) -> do
+      logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow group) (tshow err)
+      return $ alterMap (maybe (Just neverPosted) (Just . noneLeft)) group groupLimits
+    other -> do
+      logErrorN $
+        format
+        ("Unknown error posting " % s % " to " % s % ": " % s)
+        (tshow p)
+        (tshow group)
+        (tshow other)
+      return groupLimits
+
+processPhoto
+  :: (MonadFail m, MonadLoggerIO m)
+  => API
+  -> GroupLimits
+  -> Photo
+  -> m GroupLimits
+processPhoto api groupLimits photo =
+  case matchingGroups photo of
+    [] -> return groupLimits
+    groups -> do
+      logDebugN $
+        format
+        (s % "/" % s % " should be in groups: " % s)
+        (getField @"title" photo)
+        (unPhotoId $ getField @"id" photo)
+        (intercalate ", " $ map tshow $ toList groups)
+      foldM (postToGroup api photo) groupLimits (toList groups)
+
+foldMWith
+  :: (MonoFoldable mono, Monad m)
+  => a -> mono -> (a -> Element mono -> m a) -> m a
+foldMWith acc coll f = foldM f acc coll
+
 process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> m ()
 process authConfig mgr token = do
   let me = UserId "me"
       env = mkClientEnv mgr flickrApi
-      -- This is our own per-group posting limit
-      photosPerGroup = 5
       -- How many latest photos to fetch
       maxPhotoCount = 2000
 
@@ -264,8 +336,8 @@ process authConfig mgr token = do
   -- Map from group IDs to "how many more photos can we post to that
   -- group". Thus we can capture our own user-defined limits and
   -- per-group posting limits.
-  groupLimits <- newTVarIO (mapFromList [] :: Map GroupId Word)
-  postedCounter <- newTVarIO (0 :: Word)
+  let groupLimits = mapFromList [] :: Map GroupId GroupInfo
+      api = API authConfig token env
 
   Right latest <-
     liftIO $
@@ -284,53 +356,17 @@ process authConfig mgr token = do
   photosWithInfo <- liftIO $ shuffleM $ rights photosWithInfo'
   logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
 
-  -- TODO Try to split out servant-specific IO with polysemy
+  finalGroupLimits <- foldM (processPhoto api) groupLimits photosWithInfo
+  let totalPosted = getSum $ foldMap (Sum . posted) finalGroupLimits
+      depleted = finalGroupLimits &
+                 filterMap ((== 0) . left) &
+                 keys
 
-  forM_ photosWithInfo $ \p -> do
-    let candidates = candidateGroups p
-    unless (null candidates) $ do
-      logDebugN $
-        format
-          (s % "/" % s % " should be in groups: " % s)
-          (getField @"title" p)
-          (unPhotoId $ getField @"id" p)
-          (intercalate ", " $ map tshow $ toList candidates)
-      forM_ (toList candidates) $
-        \c -> do
-          -- TODO This can still fail if we get throttled on two
-          -- concurrent requests to add to the same group
-          canPost <- atomically $ do
-            gl <- readTVar groupLimits
-            case lookup c gl of
-              Just r -> return (r > 0)
-              Nothing -> return True
-          when canPost $ do
-            resp <- liftIO $ runOAuthenticated authConfig token (poolsAdd (Just (p & getField @"id")) (Just c)) env
-            case resp of
-              Right (PoolsAddResponse Ok _) -> do
-                atomically $ modifyTVar' postedCounter (1 +)
-                -- Update how many more photos can we post to this group
-                atomically $
-                  modifyTVar' groupLimits $ \gl ->
-                    insertMap c (fromMaybe photosPerGroup (lookup c gl) - 1) gl
-                logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow c)
-              Right (PoolsAddResponse Fail (Just err)) -> do
-                logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow c) (tshow err)
-                atomically $ modifyTVar' groupLimits (insertMap c 0)
-              other ->
-                logErrorN $
-                  format
-                    ("Unknown error posting " % s % " to " % s % ": " % s)
-                    (tshow p)
-                    (tshow c)
-                    (tshow other)
+  logInfoN $ format ("Added " % d % " new photos to groups") totalPosted
 
-  readTVarIO postedCounter >>= logInfoN . format ("Added " % d % " new photos to groups")
-  readTVarIO groupLimits >>= \limits -> do
-    let depleted = filter ((<= 0) . snd) (mapToList limits)
-    unless (null depleted) $
-      logInfoN $
-        format
-          ("Posting limits reached for " % d % " groups: " % s)
-          (length depleted)
-          (tshow (map fst depleted))
+  unless (null depleted) $
+    logInfoN $
+    format
+    ("Posting limits reached for " % d % " groups: " % s)
+    (length depleted)
+    (tshow depleted)

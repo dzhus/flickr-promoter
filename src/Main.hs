@@ -11,6 +11,7 @@ import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
+import Network.HTTP.Types.Status
 import Promoter.FlickrAPI
 import Promoter.Rules
 import Promoter.Types
@@ -178,6 +179,11 @@ noneLeft GroupInfo {..} = GroupInfo 0 posted
 
 type GroupLimits = Map GroupId GroupInfo
 
+formatError :: Show b => Either ClientError b -> Text
+formatError (Left (FailureResponse _req res)) =
+  tshow $ statusCode $ responseStatusCode res
+formatError x = tshow x
+
 postToGroup ::
   (MonadFail m, MonadLoggerIO m) =>
   API ->
@@ -192,10 +198,19 @@ postToGroup API {..} p groupLimits targetGroup = do
   resp <- liftIO $ runOAuthenticated authConfig token addRequest env
   case resp of
     Right (PoolsAddResponse Ok _) -> do
-      logInfoN $ format ("Posted " % s % " to " % s) (tshow p) (tshow targetGroup)
+      logInfoN $
+        format
+          ("Posted " % s % " to " % s)
+          (tshow p)
+          (tshow targetGroup)
       updateLimits startedPosting onePosted
     Right (PoolsAddResponse Fail (Just err)) -> do
-      logWarnN $ format ("Error posting to group " % s % ": " % s) (tshow targetGroup) (tshow err)
+      logWarnN $
+        format
+          ("Error posting " % s % " to group " % s % ": " % s)
+          (tshow p)
+          (tshow targetGroup)
+          (tshow err)
       updateLimits neverPosted noneLeft
     other -> do
       logErrorN $
@@ -203,7 +218,7 @@ postToGroup API {..} p groupLimits targetGroup = do
           ("Unknown error posting " % s % " to " % s % ": " % s)
           (tshow p)
           (tshow targetGroup)
-          (tshow other)
+          (formatError other)
       return groupLimits
 
 processPhoto ::

@@ -41,7 +41,6 @@ rules =
     moreFavesThan 1 .=> "416556@N22",
     moreFavesThan 1 .=> "76535076@N00", -- https://www.flickr.com/groups/flickraddicts/
     moreFavesThan 1 .=> "11252682@N00", -- https://www.flickr.com/groups/the_world_through_my_eyes/
-    moreFavesThan 1 .=> "347276@N23", -- https://www.flickr.com/groups/beautifulcapture/
     moreFavesThan 1 .=> "28747776@N00",
     moreFavesThan 1 .=> "91514935@N00",
     moreFavesThan 1 .=> "52240402017@N01",

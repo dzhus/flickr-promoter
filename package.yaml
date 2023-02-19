@@ -18,6 +18,7 @@ dependencies:
   - base64
   - binary
   - bytestring
+  - cassava
   - classy-prelude
   - containers
   - envy

@@ -1,7 +1,8 @@
 module Promoter.Types where
 
-import ClassyPrelude hiding (any)
-import Data.Aeson
+import ClassyPrelude hiding (any, id)
+import Data.Aeson hiding ((.=))
+import Data.Csv
 import Servant.API hiding (uriQuery)
 
 newtype PhotoId = PhotoId {unPhotoId :: Text}
@@ -44,3 +45,15 @@ data Photo = Photo
     faves :: Word
   }
   deriving (Show)
+
+instance ToNamedRecord Photo where
+  toNamedRecord Photo {..} =
+    namedRecord
+      [ "id" .= unPhotoId id,
+        "title" .= title,
+        "views" .= views,
+        "faves" .= faves
+      ]
+
+instance DefaultOrdered Photo where
+  headerOrder _ = fromList ["id", "title", "views", "faves"]

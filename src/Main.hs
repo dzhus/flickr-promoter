@@ -2,9 +2,11 @@
 
 module Main where
 
-import ClassyPrelude hiding (any)
+import ClassyPrelude hiding (FilePath, any)
 import Control.Monad.Fail
 import Control.Monad.Logger
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Csv as CSV
 import Data.Monoid
 import qualified Data.Text.Encoding.Base64 as T64
 import GHC.Records
@@ -13,7 +15,7 @@ import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
 import Network.HTTP.Types.Status
 import Promoter.FlickrAPI
-import Promoter.Rules
+import Promoter.Rules (matchingGroups)
 import Promoter.Types
 import Servant.Client
 import Servant.Client.OAuth1
@@ -24,7 +26,9 @@ import Text.Read
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
+import Turtle (FilePath, encodeString)
 import Turtle.Format (d, format, s, (%))
+import Turtle.Options as Options
 import Web.Authenticate.OAuth
 
 flickrOAuth :: Text -> ByteString -> OAuth
@@ -127,6 +131,15 @@ data Config = Config
   }
   deriving (Generic, Show)
 
+data Options = Options
+  { reportFile :: Maybe FilePath
+  }
+
+optionsParser :: Options.Parser Options
+optionsParser =
+  Options
+    <$> optional (optPath "report" 'r' "Path to CSV file to write photo views/faves statistics to")
+
 instance FromEnv Config where
   fromEnv = gFromEnvCustom defOption {customPrefix = "FLICKR_PROMOTER"}
 
@@ -141,6 +154,7 @@ instance Var PersistedCredential where
 main :: IO ()
 main = do
   appCfg <- decodeWithDefaults (Config Nothing Nothing Nothing)
+  opts <- options "flickr-promoter" optionsParser
   case appCfg of
     Config (Just key) (Just secret) cred ->
       let authConfig = flickrOAuth key secret
@@ -152,7 +166,7 @@ main = do
                 putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow newToken)
                 exitWith (ExitFailure 1)
               Just (PersistedCredential t) -> do
-                runStdoutLoggingT $ process authConfig mgr t
+                runStdoutLoggingT $ process authConfig mgr t opts
     _ -> error "Populate FLICKR_PROMOTER_API_KEY and FLICKR_PROMOTER_API_SECRET from https://www.flickr.com/services/apps/by/..."
 
 data API = API
@@ -245,8 +259,8 @@ processPhoto api groupLimits photo =
           (intercalate ", " $ map tshow $ toList groups)
       foldM (postToGroup api photo) groupLimits (toList groups)
 
-process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> m ()
-process authConfig mgr token = do
+process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> Options -> m ()
+process authConfig mgr token Options {..} = do
   let me = UserId "me"
       env = mkClientEnv mgr flickrApi
       -- How many latest photos to fetch
@@ -276,6 +290,15 @@ process authConfig mgr token = do
 
   photosWithInfo <- liftIO $ shuffleM $ rights photosWithInfo'
   logInfoN $ format ("Gathered details for " % d % " photos") (length photosWithInfo)
+
+  case reportFile of
+    Just fp -> do
+      let reportFileString = encodeString fp
+      liftIO $
+        LBS.writeFile reportFileString $
+          CSV.encodeDefaultOrderedByName photosWithInfo
+      logInfoN $ fromString $ "Wrote photo stats report to " ++ reportFileString
+    Nothing -> return ()
 
   finalGroupLimits <- foldM (processPhoto api) groupLimits photosWithInfo
   let totalPosted = getSum $ foldMap (Sum . posted) finalGroupLimits

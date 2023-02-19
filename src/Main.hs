@@ -192,34 +192,38 @@ postToGroup ::
   GroupId ->
   m GroupLimits
 postToGroup API {..} p groupLimits targetGroup = do
-  let addRequest = poolsAdd (Just (p & getField @"id")) (Just targetGroup)
-      updateLimits addGroupLimit changeExistingGroup =
-        return $ alterMap (maybe (Just addGroupLimit) (Just . changeExistingGroup)) targetGroup groupLimits
-  resp <- liftIO $ runOAuthenticated authConfig token addRequest env
-  case resp of
-    Right (PoolsAddResponse Ok _) -> do
-      logInfoN $
-        format
-          ("Posted " % s % " to " % s)
-          (tshow p)
-          (tshow targetGroup)
-      updateLimits startedPosting onePosted
-    Right (PoolsAddResponse Fail (Just err)) -> do
-      logWarnN $
-        format
-          ("Error posting " % s % " to group " % s % ": " % s)
-          (tshow p)
-          (tshow targetGroup)
-          (tshow err)
-      updateLimits neverPosted noneLeft
-    other -> do
-      logErrorN $
-        format
-          ("Unknown error posting " % s % " to " % s % ": " % s)
-          (tshow p)
-          (tshow targetGroup)
-          (formatError other)
-      return groupLimits
+  case left <$> lookup targetGroup groupLimits of
+    -- Per-group posting limit reached
+    Just 0 -> return groupLimits
+    _ -> do
+      let addRequest = poolsAdd (Just (p & getField @"id")) (Just targetGroup)
+          updateLimits addGroupLimit changeExistingGroup =
+            return $ alterMap (maybe (Just addGroupLimit) (Just . changeExistingGroup)) targetGroup groupLimits
+      resp <- liftIO $ runOAuthenticated authConfig token addRequest env
+      case resp of
+        Right (PoolsAddResponse Ok _) -> do
+          logInfoN $
+            format
+              ("Posted " % s % " to " % s)
+              (tshow p)
+              (tshow targetGroup)
+          updateLimits startedPosting onePosted
+        Right (PoolsAddResponse Fail (Just err)) -> do
+          logWarnN $
+            format
+              ("Error posting " % s % " to group " % s % ": " % s)
+              (tshow p)
+              (tshow targetGroup)
+              (tshow err)
+          updateLimits neverPosted noneLeft
+        other -> do
+          logErrorN $
+            format
+              ("Unknown error posting " % s % " to " % s % ": " % s)
+              (tshow p)
+              (tshow targetGroup)
+              (formatError other)
+          return groupLimits
 
 processPhoto ::
   (MonadFail m, MonadLoggerIO m) =>

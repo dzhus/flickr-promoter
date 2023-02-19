@@ -89,12 +89,10 @@ getLatestPhotos ::
   Credential ->
   ClientEnv ->
   UserId ->
-  CommaSeparatedList Text ->
-  FlickrContentType ->
   FlickrPrivacyFilter ->
   Int ->
   IO (Either ClientError [FlickrPhotoDigest])
-getLatestPhotos authConfig accessToken env userId extras cType privacyFilter maxPhotos = do
+getLatestPhotos authConfig accessToken env userId cType privacyFilter maxPhotos = do
   let -- as per https://www.flickr.com/services/api/flickr.people.getPhotos.html
       perPage = 500
       fetchFromPage page acc = do
@@ -103,8 +101,8 @@ getLatestPhotos authConfig accessToken env userId extras cType privacyFilter max
             authenticate authConfig accessToken env $
               peopleGetPhotos
                 (Just userId)
-                (Just extras)
-                (Just cType)
+                (Just $ CSL ["views", "description", "media"])
+                (Just PhotosOnly)
                 (Just privacyFilter)
                 (Just perPage)
                 (Just page)
@@ -275,8 +273,7 @@ process authConfig mgr token Options {..} = do
       api = API authConfig token env
 
   Right latest <-
-    liftIO $
-      getLatestPhotos authConfig token env me (CSL ["views", "description", "media"]) PhotosOnly Public maxPhotoCount
+    liftIO $ getLatestPhotos authConfig token env me Public maxPhotoCount
   -- Filter out videos as we don't want to post them to any groups
   let photoDigests = latest & filter ((== PhotoMedia) . media)
   logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)

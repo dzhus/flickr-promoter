@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
+
 module Promoter.FlickrAPI where
 
 import ClassyPrelude hiding (any)
@@ -43,22 +44,22 @@ instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
 newtype FlickrContent = FlickrContent
   {_content :: Text}
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 newtype FlickrUser = FlickrUser
   {username :: FlickrContent}
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 newtype LoginResponse = LoginResponse
   {user :: FlickrUser}
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 newtype PhotoResponse = PhotoResponse
   {photo :: FlickrPhoto}
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 data FlickrLocation = FlickrLocation
   { country :: Maybe FlickrContent,
@@ -70,12 +71,12 @@ data FlickrLocation = FlickrLocation
 
 extractLocation :: FlickrLocation -> Location
 extractLocation loc =
-  [country, region, county, locality] &
-  mapMaybe (\acc -> acc loc) &
-  map _content &
-  filter (/= "") &
-  intercalate ", " &
-  Location
+  [country, region, county, locality]
+    & mapMaybe (\acc -> acc loc)
+    & map _content
+    & filter (/= "")
+    & intercalate ", "
+    & Location
 
 data FlickrPhoto = FlickrPhoto
   { location :: Maybe FlickrLocation,
@@ -86,7 +87,7 @@ data FlickrPhoto = FlickrPhoto
 newtype FlickrTags = FlickrTags
   {tag :: [FlickrContent]}
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 extractTags :: FlickrTags -> Set Tag
 extractTags (FlickrTags tags) = setFromList $ map (Tag . _content) tags
@@ -95,7 +96,7 @@ newtype GetPhotosResponse = GetPhotosResponse
   { photos :: FlickrPhotos
   }
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 data Media = PhotoMedia | VideoMedia deriving (Generic, Eq, Show)
 
@@ -144,7 +145,7 @@ newtype FlickrPhotoFavorites = FlickrPhotoFavorites
   { total :: Word
   }
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 newtype CommaSeparatedList a = CSL [a]
   deriving (Show, Generic, Foldable, Functor)
@@ -156,13 +157,13 @@ newtype FlickrPool = FlickrPool
   { id :: GroupId
   }
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 newtype GetAllContextsResponse = GetAllContextsResponse
   { pool :: Maybe [FlickrPool]
   }
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 extractGroups :: GetAllContextsResponse -> Set GroupId
 extractGroups (GetAllContextsResponse Nothing) = mempty
@@ -198,13 +199,13 @@ data PoolsAddResponse = PoolsAddResponse
     code :: Maybe PoolResponseCode
   }
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 newtype PhotoFavoritesResponse = PhotoFavoritesResponse
   { photo :: FlickrPhotoFavorites
   }
   deriving (Generic, Show)
-  deriving anyclass FromJSON
+  deriving anyclass (FromJSON)
 
 -- TODO Client functions must have tagged arguments automatically, not
 -- blind `ty` from `QueryParam lab ty`

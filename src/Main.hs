@@ -109,18 +109,22 @@ getLatestPhotos authConfig accessToken env userId privacyFilter maxPhotos = do
 
         latest <- req
         let photos' = latest & photos
-            acc' = acc ++ (photos' & getField @"photo")
+            -- Filter by actual media type - looks like Flickr API
+            -- still includes videos even when only photos are
+            -- requested
+            pagePhotos =
+              photos'
+                & getField @"photo"
+                & filter ((== PhotoMedia) . media)
+            acc' = acc ++ pagePhotos
         if -- We ran out of pages
         ((photos' & getField @"page") == (photos' & getField @"pages"))
           ||
-          -- If actual number of photos is larger than reported
+          -- If actual number of photos is larger than requested
           (maxPhotos <= length acc')
-          -- This would be the last page we'd want to fetch,
-          -- assuming numbers reported are correct
-          || (fromIntegral maxPhotos <= (perPage * (photos' & getField @"page")))
           then return $ take maxPhotos acc'
           else fetchFromPage (page + 1) acc'
-  runClientM (fetchFromPage 0 []) env
+  runClientM (fetchFromPage 1 []) env
 
 data Config = Config
   { apiKey :: Maybe Text,
@@ -272,10 +276,8 @@ process authConfig mgr token Options {..} = do
   let groupLimits = mapFromList [] :: Map GroupId GroupInfo
       api = API authConfig token env
 
-  Right latest <-
+  Right photoDigests <-
     liftIO $ getLatestPhotos authConfig token env me Public maxPhotoCount
-  -- Filter out videos as we don't want to post them to any groups
-  let photoDigests = latest & filter ((== PhotoMedia) . media)
   logInfoN $ format ("Fetched " % d % " latest photos") (length photoDigests)
 
   photosWithInfo' <- liftIO $ pooledMapConcurrentlyN 100 (\fpd -> runClientM (gatherPhotoInfo (decodeUtf8 $ oauthConsumerKey authConfig) fpd) env) photoDigests

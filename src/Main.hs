@@ -134,13 +134,15 @@ data Config = Config
   deriving (Generic, Show)
 
 data Options = Options
-  { reportFile :: Maybe FilePath
+  { reportFile :: Maybe FilePath,
+    noPosting :: Bool
   }
 
 optionsParser :: Options.Parser Options
 optionsParser =
   Options
     <$> optional (optPath "report" 'r' "Path to CSV file to write photo views/faves statistics to")
+    <*> switch "no-posting" 'd' "Do not actually post photos to any groups"
 
 instance FromEnv Config where
   fromEnv = gFromEnvCustom defOption {customPrefix = "FLICKR_PROMOTER"}
@@ -299,7 +301,7 @@ process authConfig mgr token Options {..} = do
       logInfoN $ fromString $ "Wrote photo stats report to " ++ reportFileString
     Nothing -> return ()
 
-  finalGroupLimits <- foldM (processPhoto api) groupLimits photosWithInfo
+  finalGroupLimits <- if noPosting then return groupLimits else foldM (processPhoto api) groupLimits photosWithInfo
   let totalPosted = getSum $ foldMap (Sum . posted) finalGroupLimits
       depleted =
         finalGroupLimits

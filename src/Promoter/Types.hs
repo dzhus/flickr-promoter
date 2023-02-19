@@ -40,6 +40,7 @@ data Photo = Photo
     tags :: Set Tag,
     groups :: Set GroupId,
     location :: Maybe Location,
+    views :: Word,
     faves :: Word
   }
   deriving (Show)

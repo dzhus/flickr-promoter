@@ -71,12 +71,14 @@ gatherPhotoInfo key fpd = do
   faves <- photosGetFavorites (Just key) (Just photoId)
   return $
     Photo
-      photoId
-      (fpd & getField @"title")
-      (photo & getField @"tags" & extractTags)
-      (extractGroups contexts)
-      (photo & getField @"location" & fmap extractLocation)
-      (faves & getField @"photo" & getField @"total")
+      { id = photoId,
+        title = fpd & getField @"title",
+        tags = photo & getField @"tags" & extractTags,
+        groups = extractGroups contexts,
+        location = photo & getField @"location" & fmap extractLocation,
+        faves = faves & getField @"photo" & getField @"total",
+        views = fpd & getField @"views" & maybe 0 unWordFromString
+      }
 
 getLatestPhotos ::
   OAuth ->

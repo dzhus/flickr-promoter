@@ -170,10 +170,10 @@ extractGroups (GetAllContextsResponse Nothing) = mempty
 extractGroups (GetAllContextsResponse (Just pools)) =
   map (getField @"id") pools & setFromList
 
-data FlickrContentType = PhotosOnly
+data FlickrContentTypes = PhotosOnly
 
-instance ToHttpApiData FlickrContentType where
-  toQueryParam PhotosOnly = "1"
+instance ToHttpApiData FlickrContentTypes where
+  toQueryParam PhotosOnly = "0"
 
 data FlickrPrivacyFilter = Public -- TODO | Friends | Family | FriendsAndFamily | Private
 
@@ -218,7 +218,7 @@ newtype PhotoFavoritesResponse = PhotoFavoritesResponse
 type FlickrAPI =
   FlickrResponseFormat
     :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
-           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_type" FlickrContentType :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
+           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_types" FlickrContentTypes :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
            :<|> FlickrMethod "flickr.groups.pools.add" :> QueryParam "photo_id" PhotoId :> QueryParam "group_id" GroupId :> AuthProtect "oauth" :> Get '[JSON] PoolsAddResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse

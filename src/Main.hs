@@ -92,7 +92,7 @@ getLatestPhotos ::
   FlickrPrivacyFilter ->
   Int ->
   IO (Either ClientError [FlickrPhotoDigest])
-getLatestPhotos authConfig accessToken env userId cType privacyFilter maxPhotos = do
+getLatestPhotos authConfig accessToken env userId privacyFilter maxPhotos = do
   let -- as per https://www.flickr.com/services/api/flickr.people.getPhotos.html
       perPage = 500
       fetchFromPage page acc = do

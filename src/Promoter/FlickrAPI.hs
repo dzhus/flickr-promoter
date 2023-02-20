@@ -1,5 +1,8 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 
+-- | This product uses the Flickr API but is not endorsed or certified
+-- by SmugMug, Inc.
+
 module Promoter.FlickrAPI where
 
 import ClassyPrelude hiding (any)

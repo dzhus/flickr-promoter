@@ -1,5 +1,7 @@
 # flickr-promoter
 
+This product uses the Flickr API but is not endorsed or certified by SmugMug, Inc.
+
 ## Configuration
 
 | Environment variable name      | Description                                                                  |

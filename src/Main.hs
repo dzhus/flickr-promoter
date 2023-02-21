@@ -186,7 +186,7 @@ photosPerGroup = 5
 data GroupInfo = GroupInfo {left :: Word, posted :: Word}
 
 startedPosting :: GroupInfo
-startedPosting = GroupInfo (photosPerGroup - 1) photosPerGroup
+startedPosting = GroupInfo (photosPerGroup - 1) 1
 
 onePosted :: GroupInfo -> GroupInfo
 onePosted GroupInfo {..} = GroupInfo (left - 1) (posted + 1)

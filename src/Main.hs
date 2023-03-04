@@ -270,7 +270,7 @@ process authConfig mgr token Options {..} = do
       -- How many latest photos to fetch
       maxPhotoCount = 2000
 
-  (logInfoN . tshow =<<) $ liftIO $ runOAuthenticated authConfig token testLogin env
+  (logInfoN . formatError =<<) $ liftIO $ runOAuthenticated authConfig token testLogin env
 
   -- Map from group IDs to "how many more photos can we post to that
   -- group". Thus we can capture our own user-defined limits and

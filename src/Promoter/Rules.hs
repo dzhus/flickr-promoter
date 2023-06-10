@@ -69,6 +69,7 @@ rules =
     locatedIn "Italy" .=> "37996580003@N01",
     locatedIn "Rome" .=> "59943000@N00",
     locatedIn "Russia" .=> "288127@N25", -- https://www.flickr.com/groups/ru/
+    locatedIn "Scotland" .=> "37887068055@N01",
     locatedIn "Switzerland" .=> "41894179852@N01",
     locatedIn "Switzerland" .=> "67376880@N00",
     hasTag "landscape" .=> "13197975@N00",

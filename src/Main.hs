@@ -26,7 +26,7 @@ import Text.Read
 import Text.URI (mkURI)
 import Text.URI.Lens
 import Text.URI.QQ
-import Turtle (FilePath, encodeString)
+import Turtle (FilePath)
 import Turtle.Format (d, format, s, (%))
 import Turtle.Options as Options
 import Web.Authenticate.OAuth
@@ -294,11 +294,10 @@ process authConfig mgr token Options {..} = do
 
   case reportFile of
     Just fp -> do
-      let reportFileString = encodeString fp
       liftIO $
-        LBS.writeFile reportFileString $
+        LBS.writeFile fp $
           CSV.encodeDefaultOrderedByName photosWithInfo
-      logInfoN $ fromString $ "Wrote photo stats report to " ++ reportFileString
+      logInfoN $ fromString $ "Wrote photo stats report to " ++ fp
     Nothing -> return ()
 
   finalGroupLimits <- if noPosting then return groupLimits else foldM (processPhoto api) groupLimits photosWithInfo

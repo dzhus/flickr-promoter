@@ -34,6 +34,7 @@ dependencies:
   - servant
   - servant-client
   - servant-client-core
+  - stm
   - SHA
   - random-shuffle
   - text
@@ -51,6 +52,7 @@ default-extensions:
   - LambdaCase
   - MultiParamTypeClasses
   - NoImplicitPrelude
+  - NumericUnderscores
   - OverloadedStrings
   - QuasiQuotes
   - RecordWildCards

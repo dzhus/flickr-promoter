@@ -3,12 +3,15 @@
 module Main where
 
 import ClassyPrelude hiding (FilePath, any)
+import Control.Concurrent
 import Control.Monad.Fail
 import Control.Monad.Logger
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Csv as CSV
 import Data.Monoid
 import qualified Data.Text.Encoding.Base64 as T64
+import Data.Time.Clock (NominalDiffTime, diffUTCTime, secondsToNominalDiffTime, nominalDiffTimeToSeconds)
+import Numeric.Natural
 import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
@@ -207,11 +210,12 @@ formatError x = tshow x
 postToGroup ::
   (MonadFail m, MonadLoggerIO m) =>
   API ->
+  ThrottlingQueue ->
   Photo ->
   GroupLimits ->
   GroupId ->
   m GroupLimits
-postToGroup API {..} p groupLimits targetGroup = do
+postToGroup API {..} tq p groupLimits targetGroup = do
   case left <$> lookup targetGroup groupLimits of
     -- Per-group posting limit reached
     Just 0 -> return groupLimits
@@ -219,7 +223,7 @@ postToGroup API {..} p groupLimits targetGroup = do
       let addRequest = poolsAdd (Just (p & getField @"id")) (Just targetGroup)
           updateLimits addGroupLimit changeExistingGroup =
             return $ alterMap (maybe (Just addGroupLimit) (Just . changeExistingGroup)) targetGroup groupLimits
-      resp <- liftIO $ runOAuthenticated authConfig token addRequest env
+      resp <- liftIO $ throttle tq $ runOAuthenticated authConfig token addRequest env
       case resp of
         Right (PoolsAddResponse Ok _) -> do
           logInfoN $
@@ -245,13 +249,47 @@ postToGroup API {..} p groupLimits targetGroup = do
               (formatError other)
           return groupLimits
 
+type ThrottlingQueue = TBQueue UTCTime
+
+requestsPerUnit :: Natural
+requestsPerUnit = 1
+
+throttlingIntervalSeconds :: NominalDiffTime
+throttlingIntervalSeconds = secondsToNominalDiffTime 2.0
+
+throttle ::
+  (MonadIO m) =>
+  ThrottlingQueue ->
+  m a ->
+  m a
+throttle tq action = do
+  now <- liftIO getCurrentTime
+  delta <- atomically $ do
+    full <- isFullTBQueue tq
+    oldest <- if full then tryPeekTBQueue tq else return Nothing
+    case oldest of
+      Nothing -> writeTBQueue tq now >> return Nothing
+      Just oldestTs -> do
+        let elapsed = diffUTCTime now oldestTs
+            delta = elapsed - throttlingIntervalSeconds
+        if delta < 0
+        then return $ Just $ negate $ nominalDiffTimeToSeconds delta
+        else readTBQueue tq >> writeTBQueue tq now >> return Nothing
+  case delta of
+    Just delayInSeconds -> do
+      let delayInMicroseconds = floor $ toRational delayInSeconds * 1_000_000
+      liftIO $ threadDelay delayInMicroseconds
+      throttle tq action
+    Nothing -> action
+
 processPhoto ::
   (MonadFail m, MonadLoggerIO m) =>
   API ->
+  ThrottlingQueue ->
   GroupLimits ->
   Photo ->
   m GroupLimits
-processPhoto api groupLimits photo =
+processPhoto api throttlingQueue groupLimits photo =
   case matchingGroups photo of
     [] -> return groupLimits
     groups -> do
@@ -261,7 +299,7 @@ processPhoto api groupLimits photo =
           (getField @"title" photo)
           (unPhotoId $ getField @"id" photo)
           (intercalate ", " $ map tshow $ toList groups)
-      foldM (postToGroup api photo) groupLimits (toList groups)
+      foldM (postToGroup api throttlingQueue photo) groupLimits (toList groups)
 
 process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> Options -> m ()
 process authConfig mgr token Options {..} = do
@@ -300,7 +338,9 @@ process authConfig mgr token Options {..} = do
       logInfoN $ fromString $ "Wrote photo stats report to " ++ fp
     Nothing -> return ()
 
-  finalGroupLimits <- if noPosting then return groupLimits else foldM (processPhoto api) groupLimits photosWithInfo
+  throttlingQueue <- atomically $ newTBQueue requestsPerUnit
+
+  finalGroupLimits <- if noPosting then return groupLimits else foldM (processPhoto api throttlingQueue) groupLimits photosWithInfo
   let totalPosted = getSum $ foldMap (Sum . posted) finalGroupLimits
       depleted =
         finalGroupLimits

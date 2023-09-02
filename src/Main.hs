@@ -255,7 +255,7 @@ requestsPerUnit :: Natural
 requestsPerUnit = 1
 
 throttlingIntervalSeconds :: NominalDiffTime
-throttlingIntervalSeconds = secondsToNominalDiffTime 2.0
+throttlingIntervalSeconds = secondsToNominalDiffTime 5.0
 
 throttle ::
   (MonadIO m) =>

@@ -12,7 +12,7 @@ jobs:
         stack_yaml: ['stack.yaml']
     steps:
       - name: Setup Stack
-        uses: haskell/actions/setup@v2
+        uses: haskell-actions/setup@v2
         with:
           enable-stack: true
           stack-version: 'latest'
@@ -32,10 +32,10 @@ jobs:
             ${{ runner.os }}-
 
       - name: 'Set up HLint'
-        uses: haskell/actions/hlint-setup@v2
+        uses: haskell-actions/hlint-setup@v2
 
       - name: 'Run HLint'
-        uses: haskell/actions/hlint-run@v2
+        uses: haskell-actions/hlint-run@v2
         with:
           path: src/
           fail-on: warning

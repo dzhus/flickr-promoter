@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Setup Stack
-        uses: haskell/actions/setup@v2
+        uses: haskell-actions/setup@v2
         with:
           enable-stack: true
           stack-version: 'latest'

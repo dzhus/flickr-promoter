@@ -48,6 +48,7 @@ rules =
     moreFavesThan 1 .=> "68567710@N00", -- https://www.flickr.com/groups/postcard/
     moreFavesThan 1 .=> "58286952@N00",
     moreFavesThan 1 .=> "20759249@N00",
+    moreFavesThan 1 .=> "2161940@N25", -- https://flickr.com/groups/brilliantflickr/
     any .=> "557255@N22",
     any .=> "95309787@N00",
     any .=> "1148171@N20",

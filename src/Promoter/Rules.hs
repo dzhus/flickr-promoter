@@ -14,8 +14,6 @@ newtype Rule = Rule (Photo -> Bool, GroupId)
 any :: Photo -> Bool
 any = const True
 
--- | >>> locatedIn "UK"
--- False
 locatedIn :: Text -> Photo -> Bool
 locatedIn text photo =
   case getField @"location" photo of

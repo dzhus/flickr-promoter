@@ -1,6 +1,6 @@
 module Promoter.Rules where
 
-import ClassyPrelude hiding (any)
+import ClassyPrelude hiding (and, any)
 import GHC.Records
 import Lens.Micro
 import Promoter.Types
@@ -19,6 +19,9 @@ locatedIn text photo =
   case getField @"location" photo of
     Just loc -> isInfixOf text $ unLocation loc
     Nothing -> False
+
+and :: (Photo -> Bool) -> (Photo -> Bool) -> (Photo -> Bool)
+and r1 r2 = \p -> r1 p && r2 p
 
 hasTag :: Tag -> Photo -> Bool
 hasTag tag p = tag `elem` (p & getField @"tags")
@@ -57,6 +60,7 @@ rules =
     any .=> "2978869@N23", -- https://www.flickr.com/groups/2978869@N23/
     locatedIn "Bavaria" .=> "860590@N23",
     locatedIn "Crimea" .=> "60453939@N00",
+    and (hasTag "landscape") (locatedIn "Cumbria") .=> "53837206@N00",
     locatedIn "England" .=> "35468144964@N01",
     locatedIn "France" .=> "52241533836@N01",
     locatedIn "London" .=> "2625353@N20",
@@ -68,6 +72,7 @@ rules =
     locatedIn "Rome" .=> "59943000@N00",
     locatedIn "Russia" .=> "288127@N25", -- https://www.flickr.com/groups/ru/
     locatedIn "Scotland" .=> "37887068055@N01",
+    and (hasTag "landscape") (locatedIn "Scotland") .=> "70163666@N00",
     locatedIn "Switzerland" .=> "41894179852@N01",
     locatedIn "Switzerland" .=> "67376880@N00",
     hasTag "landscape" .=> "13197975@N00",

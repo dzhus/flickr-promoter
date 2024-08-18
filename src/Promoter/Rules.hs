@@ -21,7 +21,7 @@ locatedIn text photo =
     Nothing -> False
 
 and :: (Photo -> Bool) -> (Photo -> Bool) -> (Photo -> Bool)
-and r1 r2 = \p -> r1 p && r2 p
+and r1 r2 p = r1 p && r2 p
 
 hasTag :: Tag -> Photo -> Bool
 hasTag tag p = tag `elem` (p & getField @"tags")

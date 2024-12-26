@@ -178,6 +178,13 @@ data FlickrContentTypes = PhotosOnly
 instance ToHttpApiData FlickrContentTypes where
   toQueryParam PhotosOnly = "0"
 
+data FlickrSafety = Safe | Moderate | Restricted
+
+instance ToHttpApiData FlickrSafety where
+  toQueryParam Safe = "1"
+  toQueryParam Moderate = "2"
+  toQueryParam Restricted = "3"
+
 data FlickrPrivacyFilter = Public -- TODO | Friends | Family | FriendsAndFamily | Private
 
 instance ToHttpApiData FlickrPrivacyFilter where
@@ -221,7 +228,7 @@ newtype PhotoFavoritesResponse = PhotoFavoritesResponse
 type FlickrAPI =
   FlickrResponseFormat
     :> ( FlickrMethod "flickr.test.login" :> AuthProtect "oauth" :> Get '[JSON] LoginResponse
-           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_types" FlickrContentTypes :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
+           :<|> FlickrMethod "flickr.people.getPhotos" :> QueryParam "user_id" UserId :> QueryParam "extras" (CommaSeparatedList Text) :> QueryParam "content_types" FlickrContentTypes :> QueryParam "safe_search" FlickrSafety :> QueryParam "privacy_filter" FlickrPrivacyFilter :> QueryParam "per_page" Word :> QueryParam "page" Word :> AuthProtect "oauth" :> Get '[JSON] GetPhotosResponse
            :<|> FlickrMethod "flickr.groups.pools.add" :> QueryParam "photo_id" PhotoId :> QueryParam "group_id" GroupId :> AuthProtect "oauth" :> Get '[JSON] PoolsAddResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getAllContexts" :> QueryParam "photo_id" PhotoId :> Get '[JSON] GetAllContextsResponse
            :<|> QueryParam "api_key" Text :> FlickrMethod "flickr.photos.getInfo" :> QueryParam "photo_id" PhotoId :> Get '[JSON] PhotoResponse

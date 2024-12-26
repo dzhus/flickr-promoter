@@ -106,6 +106,7 @@ getLatestPhotos authConfig accessToken env userId privacyFilter maxPhotos = do
                 (Just userId)
                 (Just $ CSL ["views", "description", "media"])
                 (Just PhotosOnly)
+                (Just Safe)
                 (Just privacyFilter)
                 (Just perPage)
                 (Just page)

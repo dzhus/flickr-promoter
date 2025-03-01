@@ -3,6 +3,7 @@ module Servant.Client.OAuth1 (authenticate, runOAuthenticated) where
 import ClassyPrelude hiding (any)
 import Data.Binary.Builder hiding (empty)
 import qualified Data.ByteString.Base64 as B64
+import Data.Base64.Types
 import qualified Data.ByteString.Char8 as BS
 import Data.Digest.Pure.SHA
 import Data.Time.Clock
@@ -40,7 +41,7 @@ generateSignature ::
   Credential ->
   ClientEnv ->
   Request ->
-  ByteString
+  Base64 'StdPadded ByteString
 generateSignature oa cred env req =
   case (oauthSignatureMethod oa, lookup "oauth_token_secret" $ unCredential cred) of
     (HMACSHA1, Just tokenSecret) ->
@@ -63,7 +64,7 @@ signRequest ::
 signRequest oa cred env nonce ts req =
   case lookup "oauth_token" $ unCredential cred of
     Just oauth_token ->
-      req' & add "oauth_signature" (generateSignature oa cred env req')
+      req' & add "oauth_signature" (extractBase64 $ generateSignature oa cred env req')
       where
         -- https://oauth.net/core/1.0a/#anchor12
         add f v = appendToQueryString f (Just v)

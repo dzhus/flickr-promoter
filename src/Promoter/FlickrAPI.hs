@@ -2,7 +2,6 @@
 
 -- | This product uses the Flickr API but is not endorsed or certified
 -- by SmugMug, Inc.
-
 module Promoter.FlickrAPI where
 
 import ClassyPrelude hiding (any)
@@ -33,7 +32,7 @@ instance (KnownSymbol method, HasClient m api) => HasClient m (FlickrMethod meth
 
 data FlickrResponseFormat = JsonFormat
 
-instance HasClient m api => HasClient m (FlickrResponseFormat :> api) where
+instance (HasClient m api) => HasClient m (FlickrResponseFormat :> api) where
   type Client m (FlickrResponseFormat :> api) = Client m api
 
   clientWithRoute pm _ =
@@ -153,7 +152,7 @@ newtype FlickrPhotoFavorites = FlickrPhotoFavorites
 newtype CommaSeparatedList a = CSL [a]
   deriving (Show, Generic, Foldable, Functor)
 
-instance ToHttpApiData a => ToHttpApiData (CommaSeparatedList a) where
+instance (ToHttpApiData a) => ToHttpApiData (CommaSeparatedList a) where
   toQueryParam (CSL params) = intercalate "," $ map toQueryParam params
 
 newtype FlickrPool = FlickrPool

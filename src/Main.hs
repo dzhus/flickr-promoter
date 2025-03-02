@@ -11,13 +11,13 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Csv as CSV
 import Data.Monoid
 import qualified Data.Text.Encoding.Base64 as T64
-import Data.Time.Clock (NominalDiffTime, diffUTCTime, secondsToNominalDiffTime, nominalDiffTimeToSeconds)
-import Numeric.Natural
+import Data.Time.Clock (NominalDiffTime, diffUTCTime, nominalDiffTimeToSeconds, secondsToNominalDiffTime)
 import GHC.Records
 import Lens.Micro
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS
 import Network.HTTP.Types.Status
+import Numeric.Natural
 import Promoter.FlickrAPI
 import Promoter.Rules (matchingGroups)
 import Promoter.Types
@@ -204,7 +204,7 @@ noneLeft GroupInfo {..} = GroupInfo 0 posted
 
 type GroupLimits = Map GroupId GroupInfo
 
-formatError :: Show b => Either ClientError b -> Text
+formatError :: (Show b) => Either ClientError b -> Text
 formatError (Left (FailureResponse _req res)) =
   tshow $ statusCode $ responseStatusCode res
 formatError x = tshow x
@@ -275,8 +275,8 @@ throttle tq action = do
         let elapsed = diffUTCTime now oldestTs
             delta = elapsed - throttlingIntervalSeconds
         if delta < 0
-        then return $ Just $ negate $ nominalDiffTimeToSeconds delta
-        else readTBQueue tq >> writeTBQueue tq now >> return Nothing
+          then return $ Just $ negate $ nominalDiffTimeToSeconds delta
+          else readTBQueue tq >> writeTBQueue tq now >> return Nothing
   case delta of
     Just delayInSeconds -> do
       let delayInMicroseconds = floor $ toRational delayInSeconds * 1_000_000
@@ -292,18 +292,17 @@ processPhoto ::
   Photo ->
   m GroupLimits
 processPhoto api throttlingQueue groupLimits photo =
-  let
-    groups = matchingGroups photo
-  in
-    if groups == mempty then return groupLimits
-    else do
-      logDebugN $
-        format
-          (s % "/" % s % " should be in groups: " % s)
-          (getField @"title" photo)
-          (unPhotoId $ getField @"id" photo)
-          (intercalate ", " $ map tshow $ toList groups)
-      foldM (postToGroup api throttlingQueue photo) groupLimits (toList groups)
+  let groups = matchingGroups photo
+   in if groups == mempty
+        then return groupLimits
+        else do
+          logDebugN $
+            format
+              (s % "/" % s % " should be in groups: " % s)
+              (getField @"title" photo)
+              (unPhotoId $ getField @"id" photo)
+              (intercalate ", " $ map tshow $ toList groups)
+          foldM (postToGroup api throttlingQueue photo) groupLimits (toList groups)
 
 process :: (MonadFail m, MonadLoggerIO m) => OAuth -> Manager -> Credential -> Options -> m ()
 process authConfig mgr token Options {..} = do

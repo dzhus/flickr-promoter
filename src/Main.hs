@@ -292,9 +292,11 @@ processPhoto ::
   Photo ->
   m GroupLimits
 processPhoto api throttlingQueue groupLimits photo =
-  case matchingGroups photo of
-    [] -> return groupLimits
-    groups -> do
+  let
+    groups = matchingGroups photo
+  in
+    if groups == mempty then return groupLimits
+    else do
       logDebugN $
         format
           (s % "/" % s % " should be in groups: " % s)

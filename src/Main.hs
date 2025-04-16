@@ -6,7 +6,6 @@ import ClassyPrelude hiding (FilePath, any)
 import Control.Concurrent
 import Control.Monad.Fail
 import Control.Monad.Logger
-import Data.Base64.Types
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Csv as CSV
 import Data.Monoid
@@ -155,10 +154,10 @@ instance FromEnv Config where
 newtype PersistedCredential = PersistedCredential Credential deriving (Read, Show)
 
 instance Var PersistedCredential where
-  fromVar t = case T64.decodeBase64Untyped (pack t) of
+  fromVar t = case T64.decodeBase64 (pack t) of
     Left _ -> fail "Could not parse PersistedCredential"
     Right v -> Just (PersistedCredential $ read $ unpack v)
-  toVar (PersistedCredential t) = unpack $ extractBase64 $ T64.encodeBase64 $ tshow t
+  toVar (PersistedCredential t) = unpack $ T64.encodeBase64 $ tshow t
 
 main :: IO ()
 main = do
@@ -172,7 +171,7 @@ main = do
             case cred of
               Nothing -> do
                 newToken <- liftIO $ auth mgr authConfig
-                putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (extractBase64 $ T64.encodeBase64 $ tshow newToken)
+                putStrLn $ format ("Now run with FLICKR_PROMOTER_ACCESS_TOKEN=" % s) (T64.encodeBase64 $ tshow newToken)
                 exitWith (ExitFailure 1)
               Just (PersistedCredential t) -> do
                 runStdoutLoggingT $ process authConfig mgr t opts

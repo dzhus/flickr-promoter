@@ -80,7 +80,8 @@ def _parse_views(value: Any) -> int:
 
 
 class FlickrClient:
-    def __init__(self, throttle: Throttle | None = None) -> None:
+    def __init__(self, auth_handler: AuthHandler, throttle: Throttle | None = None) -> None:
+        self._auth_handler = auth_handler
         self._throttle = throttle or Throttle()
 
     def _call(self, **kwargs: Any) -> dict[str, Any]:
@@ -90,7 +91,7 @@ class FlickrClient:
         return self._throttle.run(do_call)
 
     def test_login(self) -> None:
-        self._call(method="flickr.test.login", needssigning=True)
+        self._call(method="flickr.test.login", auth_handler=self._auth_handler, needssigning=True)
 
     def get_latest_photos(self, max_photos: int = MAX_PHOTO_COUNT) -> list[PhotoDigest]:
         person = flickr_objects.Person(id="me")

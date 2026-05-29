@@ -165,9 +165,9 @@ def process(args: argparse.Namespace) -> None:
             "from https://www.flickr.com/services/apps/by/..."
         )
 
-    setup_session(api_key, api_secret)
+    auth_handler = setup_session(api_key, api_secret)
     throttle = Throttle()
-    client = FlickrClient(throttle)
+    client = FlickrClient(auth_handler, throttle)
 
     client.test_login()
     logger.info("Logged in to Flickr")

@@ -5,39 +5,25 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  build:
+  run:
     name: Run
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
     steps:
-      - name: Setup Stack
-        uses: haskell-actions/setup@v2
-        with:
-          enable-stack: true
-          stack-version: 'latest'
-
       - name: Clone project
         uses: actions/checkout@v4
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          path: |
-            ~/.stack
-            .stack-work
-          key: ${{ runner.os }}-${{ matrix.stack_yaml }}-${{ hashFiles(matrix.stack_yaml) }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.stack_yaml }}-
-            ${{ runner.os }}-
+          python-version: "3.12"
 
-      - name: Build
-        run:
-          stack build --fast
+      - name: Install
+        run: pip install .
 
       - name: Run
         env:
-          FLICKR_PROMOTER_ACCESS_TOKEN: ${{secrets.FLICKR_PROMOTER_ACCESS_TOKEN}}
-          FLICKR_PROMOTER_API_KEY: ${{secrets.FLICKR_PROMOTER_API_KEY}}
-          FLICKR_PROMOTER_API_SECRET: ${{secrets.FLICKR_PROMOTER_API_SECRET}}
-        run: stack exec -- flickr-promoter
+          FLICKR_PROMOTER_API_KEY: ${{ secrets.FLICKR_PROMOTER_API_KEY }}
+          FLICKR_PROMOTER_API_SECRET: ${{ secrets.FLICKR_PROMOTER_API_SECRET }}
+          FLICKR_PROMOTER_OAUTH_TOKEN: ${{ secrets.FLICKR_PROMOTER_OAUTH_TOKEN }}
+          FLICKR_PROMOTER_OAUTH_TOKEN_SECRET: ${{ secrets.FLICKR_PROMOTER_OAUTH_TOKEN_SECRET }}
+        run: flickr-promoter

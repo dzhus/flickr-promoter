@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flickr-promoter"
+version = "0.2.0"
+description = "Promote Flickr photos to groups based on configurable rules"
+readme = "README.md"
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.10"
+authors = [{ name = "Dmitry Dzhus", email = "dima@dzhus.org" }]
+dependencies = [
+    "flickr-api>=0.8.0",
+]
+
+[project.scripts]
+flickr-promoter = "flickr_promoter.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flickr_promoter*"]

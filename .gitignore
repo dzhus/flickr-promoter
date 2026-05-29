@@ -1,2 +1,9 @@
 *.cabal
 .stack-work
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.flickr-promoter/

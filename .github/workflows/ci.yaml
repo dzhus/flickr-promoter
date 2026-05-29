@@ -1,4 +1,4 @@
-name: Build & test
+name: Build
 on:
   push:
 
@@ -6,39 +6,14 @@ jobs:
   build:
     name: CI
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        stack_yaml: ['stack.yaml']
     steps:
-      - name: Setup Stack
-        uses: haskell-actions/setup@v2
-        with:
-          enable-stack: true
-          stack-version: 'latest'
-
       - name: Clone project
         uses: actions/checkout@v4
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          path: |
-            ~/.stack
-            .stack-work
-          key: ${{ runner.os }}-${{ matrix.stack_yaml }}-${{ hashFiles(matrix.stack_yaml) }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.stack_yaml }}-
-            ${{ runner.os }}-
+          python-version: "3.12"
 
-      - name: 'Set up HLint'
-        uses: haskell-actions/hlint-setup@v2
-
-      - name: 'Run HLint'
-        uses: haskell-actions/hlint-run@v2
-        with:
-          path: src/
-          fail-on: warning
-
-      - name: Build and run tests
-        run: 'stack build --fast --no-terminal --stack-yaml=${{ matrix.stack_yaml }} --pedantic --haddock --no-haddock-deps --test --bench --no-run-benchmarks'
+      - name: Install
+        run: pip install .

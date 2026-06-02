@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-THROTTLING_INTERVAL_SECONDS = 5.0
-REQUESTS_PER_UNIT = 1
+THROTTLING_INTERVAL_SECONDS = 1.0
+REQUESTS_PER_UNIT = 10
 
 
 class Throttle:

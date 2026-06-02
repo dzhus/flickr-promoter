@@ -264,7 +264,7 @@ def process(args: argparse.Namespace) -> None:
             group_limits = _process_photo(client, group_limits, photo)
 
     total_posted = sum(info.posted for info in group_limits.values())
-    logger.info("Added %d new photos to groups", total_posted)
+    logger.info("Made %d new photo postings", total_posted)
 
     depleted = [gid for gid, info in group_limits.items() if info.left == 0]
     if depleted:

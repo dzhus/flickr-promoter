@@ -40,3 +40,4 @@ Options:
 
 - `-r` / `--report PATH` — write CSV with photo id, title, views, and faves
 - `-d` / `--no-posting` — fetch and evaluate rules without posting to groups
+- `-v` / `--verbose` — debug logging (per-photo API steps, throttle waits, tracebacks on errors)

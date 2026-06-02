@@ -3,8 +3,11 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+import logging
 from collections.abc import Callable
 from typing import TypeVar
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -30,6 +33,7 @@ class Throttle:
             delay = self._acquire_slot()
             if delay is None:
                 return action()
+            logger.debug("Throttling %.1f s before next Flickr API call", delay)
             time.sleep(delay)
 
     def _acquire_slot(self) -> float | None:

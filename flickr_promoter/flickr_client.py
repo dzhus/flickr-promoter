@@ -7,6 +7,7 @@ from typing import Any
 import flickr_api
 from flickr_api import method_call
 from flickr_api import objects as flickr_objects
+from flickr_api.auth import AuthHandler
 
 from flickr_promoter.throttle import Throttle
 from flickr_promoter.types import GroupId, Location, Photo, PhotoId, Tag
@@ -44,22 +45,36 @@ def _content(value: Any) -> str:
     return str(value)
 
 
-def _extract_location(photo_info: dict[str, Any]) -> Location | None:
-    loc = photo_info.get("location")
-    if not loc or not isinstance(loc, dict):
+def _photo_field(photo_info: Any, key: str, default: Any = None) -> Any:
+    if isinstance(photo_info, dict):
+        return photo_info.get(key, default)
+    return getattr(photo_info, key, default)
+
+
+def _extract_location(photo_info: Any) -> Location | None:
+    loc = _photo_field(photo_info, "location")
+    if not loc:
         return None
-    parts = [
-        _content(loc.get("country")),
-        _content(loc.get("region")),
-        _content(loc.get("county")),
-        _content(loc.get("locality")),
-    ]
+    if isinstance(loc, dict):
+        parts = [
+            _content(loc.get("country")),
+            _content(loc.get("region")),
+            _content(loc.get("county")),
+            _content(loc.get("locality")),
+        ]
+    else:
+        parts = [
+            _content(getattr(loc, "country", None)),
+            _content(getattr(loc, "region", None)),
+            _content(getattr(loc, "county", None)),
+            _content(getattr(loc, "locality", None)),
+        ]
     text = ", ".join(p for p in parts if p)
     return Location(text) if text else None
 
 
-def _extract_tags(photo_info: dict[str, Any]) -> set[Tag]:
-    tags = photo_info.get("tags", [])
+def _extract_tags(photo_info: Any) -> set[Tag]:
+    tags = _photo_field(photo_info, "tags", [])
     if not isinstance(tags, list):
         return set()
     result: set[Tag] = set()
@@ -85,13 +100,16 @@ class FlickrClient:
         self._throttle = throttle or Throttle()
 
     def _call(self, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("auth_handler", self._auth_handler)
+
         def do_call() -> dict[str, Any]:
+            logger.debug("API call: %s", kwargs.get("method"))
             return method_call.call_api(**kwargs)
 
         return self._throttle.run(do_call)
 
     def test_login(self) -> None:
-        self._call(method="flickr.test.login", auth_handler=self._auth_handler, needssigning=True)
+        self._call(method="flickr.test.login")
 
     def get_latest_photos(self, max_photos: int = MAX_PHOTO_COUNT) -> list[PhotoDigest]:
         person = flickr_objects.Person(id="me")
@@ -132,13 +150,26 @@ class FlickrClient:
         return collected[:max_photos]
 
     def gather_photo_info(self, digest: PhotoDigest) -> Photo:
-        photo = flickr_objects.Photo(id=str(digest.id))
+        photo_id = str(digest.id)
+        logger.debug("Gathering info for %s (%r)", photo_id, digest.title)
+        photo = flickr_objects.Photo(id=photo_id)
+
+        logger.debug("  %s: photos.getInfo", photo_id)
         info = self._throttle.run(photo.getInfo)
+        logger.debug("  %s: getInfo returned %s", photo_id, type(info).__name__)
+
+        logger.debug("  %s: photos.getAllContexts", photo_id)
         _, pools = self._throttle.run(photo.getAllContexts)
+        logger.debug("  %s: %d pool(s)", photo_id, len(pools))
+
+        logger.debug("  %s: photos.getFavorites", photo_id)
         faves_list = self._throttle.run(photo.getFavorites)
+        faves = int(getattr(faves_list.info, "total", 0) or 0)
+        if faves == 0 and hasattr(faves_list, "__len__"):
+            faves = len(faves_list)
+        logger.debug("  %s: %d fave(s)", photo_id, faves)
 
         groups = {GroupId(str(pool.id)) for pool in pools}
-        faves = int(getattr(faves_list.info, "total", 0) or 0)
 
         return Photo(
             id=digest.id,
@@ -155,7 +186,6 @@ class FlickrClient:
             method="flickr.groups.pools.add",
             photo_id=str(photo_id),
             group_id=str(group_id),
-            needssigning=True,
         )
         stat = str(response.get("stat", ""))
         code = response.get("code")

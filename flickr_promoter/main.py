@@ -14,7 +14,7 @@ from flickr_promoter.auth import setup_session
 from flickr_promoter.flickr_client import FlickrClient
 from flickr_promoter.rules import matching_groups
 from flickr_promoter.throttle import Throttle
-from flickr_promoter.types import GroupId, Photo
+from flickr_promoter.types import GroupId, Photo, PhotoId
 
 PHOTOS_PER_GROUP = 5
 GATHER_WORKERS = 100
@@ -57,6 +57,12 @@ def _parse_args() -> argparse.Namespace:
         "--no-posting",
         action="store_true",
         help="Do not actually post photos to any groups",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging (API calls per photo, errors with tracebacks)",
     )
     return parser.parse_args()
 
@@ -176,22 +182,47 @@ def process(args: argparse.Namespace) -> None:
     logger.info("Fetched %d latest photos", len(digests))
 
     photos: list[Photo] = []
-    errors: list[BaseException] = []
+    errors: list[tuple[PhotoId, BaseException]] = []
+    completed = 0
 
     def gather_one(digest):
         return client.gather_photo_info(digest)
 
-    with ThreadPoolExecutor(max_workers=GATHER_WORKERS) as executor:
+    workers = min(GATHER_WORKERS, max(len(digests), 1))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(gather_one, d): d for d in digests}
         for future in as_completed(futures):
+            digest = futures[future]
+            completed += 1
             try:
                 photos.append(future.result())
+                logger.info(
+                    "Gathered %d/%d: %s (%s)",
+                    completed,
+                    len(digests),
+                    digest.id,
+                    digest.title,
+                )
             except Exception as exc:
-                errors.append(exc)
+                errors.append((digest.id, exc))
+                logger.error(
+                    "Failed %d/%d: %s (%s): %s",
+                    completed,
+                    len(digests),
+                    digest.id,
+                    digest.title,
+                    exc,
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
 
     if errors:
-        for exc in errors:
-            logger.error("%s", exc)
+        logger.error(
+            "Metadata gather failed for %d of %d photos",
+            len(errors),
+            len(digests),
+        )
+        for photo_id, exc in errors:
+            logger.error("  %s: %s: %s", photo_id, type(exc).__name__, exc)
         sys.exit(1)
 
     random.shuffle(photos)
@@ -220,11 +251,14 @@ def process(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    args = _parse_args()
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
     )
-    process(_parse_args())
+    if args.verbose:
+        logging.getLogger("flickr_promoter").setLevel(logging.DEBUG)
+    process(args)
 
 
 if __name__ == "__main__":

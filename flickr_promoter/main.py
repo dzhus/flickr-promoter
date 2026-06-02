@@ -44,6 +44,18 @@ def _none_left(info: GroupInfo) -> GroupInfo:
     return GroupInfo(left=0, posted=info.posted)
 
 
+def _disable_group(
+    group_limits: dict[GroupId, GroupInfo],
+    group_id: GroupId,
+) -> dict[GroupId, GroupInfo]:
+    existing = group_limits.get(group_id)
+    if existing is not None:
+        updated = _none_left(existing)
+    else:
+        updated = _never_posted()
+    return {**group_limits, group_id: updated}
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="flickr-promoter")
     parser.add_argument(
@@ -100,6 +112,7 @@ def _post_to_group(
 ) -> dict[GroupId, GroupInfo]:
     info = group_limits.get(target_group)
     if info is not None and info.left == 0:
+        logger.debug("Skipping disabled group %s", target_group)
         return group_limits
 
     try:
@@ -111,34 +124,46 @@ def _post_to_group(
             target_group,
             exc,
         )
-        return group_limits
+        logger.info(
+            "Disabled group %s for remainder of run (%s)",
+            target_group,
+            exc,
+        )
+        return _disable_group(group_limits, target_group)
 
     if response.stat == "ok":
         logger.info("Posted %s to %s", photo, target_group)
         updated = _started_posting() if target_group not in group_limits else _one_posted(
             group_limits[target_group]
         )
-    elif response.stat == "fail":
+        return {**group_limits, target_group: updated}
+
+    if response.stat == "fail":
+        reason = _format_pool_error(response.code)
         logger.warning(
             "Error posting %s to group %s: %s",
             photo,
             target_group,
-            _format_pool_error(response.code),
+            reason,
         )
-        if target_group in group_limits:
-            updated = _none_left(group_limits[target_group])
-        else:
-            updated = _never_posted()
-    else:
-        logger.error(
-            "Unknown error posting %s to %s: %s",
-            photo,
+        logger.info(
+            "Disabled group %s for remainder of run (%s)",
             target_group,
-            response,
+            reason,
         )
-        return group_limits
+        return _disable_group(group_limits, target_group)
 
-    return {**group_limits, target_group: updated}
+    logger.error(
+        "Unknown error posting %s to %s: %s",
+        photo,
+        target_group,
+        response,
+    )
+    logger.info(
+        "Disabled group %s for remainder of run (unexpected response)",
+        target_group,
+    )
+    return _disable_group(group_limits, target_group)
 
 
 def _process_photo(

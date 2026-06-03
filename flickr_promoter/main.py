@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from flickr_promoter.auth import setup_session
+from flickr_promoter.log_safety import configure_logging, safe_exception_summary
 from flickr_promoter.flickr_client import FlickrClient
 from flickr_promoter.rules import matching_groups
 from flickr_promoter.throttle import Throttle
@@ -74,7 +75,7 @@ def _parse_args() -> argparse.Namespace:
         "-v",
         "--verbose",
         action="store_true",
-        help="Enable debug logging (API calls per photo, errors with tracebacks)",
+        help="Enable debug logging (per-photo API steps; no secrets or tracebacks)",
     )
     return parser.parse_args()
 
@@ -118,16 +119,17 @@ def _post_to_group(
     try:
         response = client.pools_add(photo.id, target_group)
     except Exception as exc:
+        summary = safe_exception_summary(exc)
         logger.error(
             "Unknown error posting %s to %s: %s",
             photo,
             target_group,
-            exc,
+            summary,
         )
         logger.info(
             "Disabled group %s for remainder of run (%s)",
             target_group,
-            exc,
+            summary,
         )
         return _disable_group(group_limits, target_group)
 
@@ -230,14 +232,14 @@ def process(args: argparse.Namespace) -> None:
                 )
             except Exception as exc:
                 errors.append((digest.id, exc))
+                summary = safe_exception_summary(exc)
                 logger.error(
                     "Failed %d/%d: %s (%s): %s",
                     completed,
                     len(digests),
                     digest.id,
                     digest.title,
-                    exc,
-                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                    summary,
                 )
 
     if errors:
@@ -247,7 +249,7 @@ def process(args: argparse.Namespace) -> None:
             len(digests),
         )
         for photo_id, exc in errors:
-            logger.error("  %s: %s: %s", photo_id, type(exc).__name__, exc)
+            logger.error("  %s: %s", photo_id, safe_exception_summary(exc))
         sys.exit(1)
 
     random.shuffle(photos)
@@ -277,12 +279,7 @@ def process(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = _parse_args()
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s: %(message)s",
-    )
-    if args.verbose:
-        logging.getLogger("flickr_promoter").setLevel(logging.DEBUG)
+    configure_logging(verbose=args.verbose)
     process(args)
 
 

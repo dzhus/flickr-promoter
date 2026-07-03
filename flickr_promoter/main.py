@@ -295,7 +295,6 @@ def process(args: argparse.Namespace) -> None:
         )
         for photo_id, exc in errors:
             logger.error("  %s: %s", photo_id, safe_exception_summary(exc))
-        sys.exit(1)
 
     random.shuffle(photos)
     logger.info("Gathered details for %d photos", len(photos))

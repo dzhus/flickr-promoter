@@ -11,8 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from flickr_promoter.auth import setup_session
+from flickr_promoter.flickr_client import FlickrClient, PhotoDigest
 from flickr_promoter.log_safety import configure_logging, safe_exception_summary
-from flickr_promoter.flickr_client import FlickrClient
+from flickr_promoter.metadata_cache import (
+    default_metadata_cache_file,
+    load as load_metadata_cache,
+    photo_from_cache_with_digest,
+    save as save_metadata_cache,
+)
 from flickr_promoter.rules import matching_groups
 from flickr_promoter.throttle import Throttle
 from flickr_promoter.types import GroupId, Photo, PhotoId
@@ -189,30 +195,15 @@ def _process_photo(
     return group_limits
 
 
-def process(args: argparse.Namespace) -> None:
-    api_key = os.environ.get("FLICKR_PROMOTER_API_KEY")
-    api_secret = os.environ.get("FLICKR_PROMOTER_API_SECRET")
-    if not api_key or not api_secret:
-        sys.exit(
-            "Populate FLICKR_PROMOTER_API_KEY and FLICKR_PROMOTER_API_SECRET "
-            "from https://www.flickr.com/services/apps/by/..."
-        )
-
-    auth_handler = setup_session(api_key, api_secret)
-    throttle = Throttle()
-    client = FlickrClient(auth_handler, throttle)
-
-    client.test_login()
-    logger.info("Logged in to Flickr")
-
-    digests = client.get_latest_photos()
-    logger.info("Fetched %d latest photos", len(digests))
-
+def _gather_photos_from_digests(
+    client: FlickrClient,
+    digests: list[PhotoDigest],
+) -> tuple[list[Photo], list[tuple[PhotoId, BaseException]]]:
     photos: list[Photo] = []
     errors: list[tuple[PhotoId, BaseException]] = []
     completed = 0
 
-    def gather_one(digest):
+    def gather_one(digest: PhotoDigest) -> Photo:
         return client.gather_photo_info(digest)
 
     workers = min(GATHER_WORKERS, max(len(digests), 1))
@@ -242,11 +233,65 @@ def process(args: argparse.Namespace) -> None:
                     summary,
                 )
 
+    return photos, errors
+
+
+def process(args: argparse.Namespace) -> None:
+    api_key = os.environ.get("FLICKR_PROMOTER_API_KEY")
+    api_secret = os.environ.get("FLICKR_PROMOTER_API_SECRET")
+    if not api_key or not api_secret:
+        sys.exit(
+            "Populate FLICKR_PROMOTER_API_KEY and FLICKR_PROMOTER_API_SECRET "
+            "from https://www.flickr.com/services/apps/by/..."
+        )
+
+    auth_handler = setup_session(api_key, api_secret)
+    throttle = Throttle()
+    client = FlickrClient(auth_handler, throttle)
+
+    client.test_login()
+    logger.info("Logged in to Flickr")
+
+    digests = client.get_latest_photos()
+    logger.info("Fetched %d latest photos", len(digests))
+
+    cache_path = default_metadata_cache_file()
+    cached = load_metadata_cache(cache_path) if cache_path.is_file() else {}
+    if cached:
+        logger.info("Loaded metadata cache from %s (%d entries)", cache_path, len(cached))
+
+    missing_digests = [digest for digest in digests if digest.id not in cached]
+    if missing_digests:
+        logger.info(
+            "Fetching metadata for %d/%d photos (cache miss)",
+            len(missing_digests),
+            len(digests),
+        )
+
+    photos: list[Photo] = [
+        photo_from_cache_with_digest(
+            cached[digest.id],
+            title=digest.title,
+            views=digest.views,
+        )
+        for digest in digests
+        if digest.id in cached
+    ]
+
+    fetched_photos, errors = _gather_photos_from_digests(client, missing_digests)
+    photos.extend(fetched_photos)
+
+    if fetched_photos:
+        for photo in fetched_photos:
+            cached[photo.id] = photo
+        save_metadata_cache(cache_path, cached)
+        logger.info("Wrote metadata cache to %s (%d entries)", cache_path, len(cached))
+
     if errors:
         logger.error(
             "Metadata gather failed for %d of %d photos",
             len(errors),
-            len(digests),
+            len(missing_digests),
         )
         for photo_id, exc in errors:
             logger.error("  %s: %s", photo_id, safe_exception_summary(exc))

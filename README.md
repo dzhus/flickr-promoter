@@ -9,6 +9,7 @@ This product uses the Flickr API but is not endorsed or certified by SmugMug, In
 | `FLICKR_PROMOTER_API_KEY` | API key from `https://www.flickr.com/services/apps/by/...` |
 | `FLICKR_PROMOTER_API_SECRET` | App secret from the same page as above |
 | `FLICKR_PROMOTER_AUTH_FILE` | Optional path to OAuth token file (default: `~/.config/flickr-promoter/auth`) |
+| `FLICKR_PROMOTER_METADATA_CACHE_FILE` | Optional path to JSON metadata cache (default: `~/.config/flickr-promoter/metadata-cache.json`) |
 | `FLICKR_PROMOTER_OAUTH_TOKEN` | OAuth access token (for CI; use with secret below) |
 | `FLICKR_PROMOTER_OAUTH_TOKEN_SECRET` | OAuth access token secret |
 

@@ -14,7 +14,7 @@ from flickr_promoter.types import GroupId, Location, Photo, PhotoId, Tag
 
 logger = logging.getLogger(__name__)
 
-MAX_PHOTO_COUNT = 2000
+MAX_PHOTO_COUNT = 3500
 PER_PAGE = 500
 
 

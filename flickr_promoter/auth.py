@@ -12,7 +12,10 @@ DEFAULT_AUTH_FILE = Path.home() / ".config" / "flickr-promoter" / "auth"
 
 
 def default_auth_file() -> Path:
-    return Path(os.environ.get("FLICKR_PROMOTER_AUTH_FILE", DEFAULT_AUTH_FILE))
+    configured = os.environ.get("FLICKR_PROMOTER_AUTH_FILE")
+    if configured is not None:
+        return Path(configured).expanduser()
+    return DEFAULT_AUTH_FILE
 
 
 def extract_oauth_verifier(url_or_code: str) -> str:

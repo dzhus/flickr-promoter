@@ -16,9 +16,10 @@ DEFAULT_METADATA_CACHE_FILE = (
 
 
 def default_metadata_cache_file() -> Path:
-    return Path(
-        os.environ.get("FLICKR_PROMOTER_METADATA_CACHE_FILE", DEFAULT_METADATA_CACHE_FILE)
-    )
+    configured = os.environ.get("FLICKR_PROMOTER_METADATA_CACHE_FILE")
+    if configured is not None:
+        return Path(configured).expanduser()
+    return DEFAULT_METADATA_CACHE_FILE
 
 
 def photo_to_dict(photo: Photo) -> dict:
